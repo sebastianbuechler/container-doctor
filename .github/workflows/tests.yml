@@ -1,0 +1,33 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      # Test on the Python the image ships, read from the Dockerfile's base
+      # image so a Dependabot bump there moves CI along with it.
+      - name: Read the image's Python version
+        id: python
+        run: |
+          version=$(sed -nE 's/^FROM python:([0-9]+\.[0-9]+).*/\1/p' Dockerfile)
+          test -n "$version" || { echo "::error::No python base image in Dockerfile"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.python.outputs.version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      # Install what the app actually declares rather than a hand-picked
+      # subset: a curated list drifts from requirements.txt silently.
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run unit and concurrency tests
+        run: python -m unittest discover -s tests -v

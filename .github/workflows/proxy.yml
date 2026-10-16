@@ -1,0 +1,38 @@
+name: Socket proxy boundary
+on:
+  pull_request:
+    paths:
+      - 'compose.example.yaml'
+      - 'Dockerfile'
+      - 'tests/test_socket_proxy.py'
+      - '.github/workflows/proxy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read the image's Python version
+        id: python
+        run: |
+          version=$(sed -nE 's/^FROM python:([0-9]+\.[0-9]+).*/\1/p' Dockerfile)
+          test -n "$version" || { echo "::error::No python base image in Dockerfile"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ steps.python.outputs.version }}
+          cache: pip
+          cache-dependency-path: requirements.txt
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Validate Compose configuration
+        run: docker compose -f compose.example.yaml config --quiet
+      # Starts the real proxy image with compose.example.yaml's settings and
+      # proves the doctor can restart a container and cannot create one.
+      - name: Test proxy startup and endpoint permissions
+        env:
+          DOCTOR_PROXY_INTEGRATION: '1'
+        run: python -m unittest discover -s tests -p test_socket_proxy.py -v

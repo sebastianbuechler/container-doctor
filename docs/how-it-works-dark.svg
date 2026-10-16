@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 340" width="980" height="340" role="img" aria-label="How Container Doctor works. Rules watching the containers open an incident; evidence is gathered and secrets stripped; a model explains the failure and proposes one of five fixed actions, advisory only; a deterministic policy engine then either notifies you, waits for your approval, or restarts the container and verifies it. Everything crosses a socket proxy that blocks exec, volumes and secrets, and restarting is the only write path back to the containers.">
+<defs>
+<marker id="a" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#8e8c85"/></marker>
+<marker id="aa" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,1 L9,5 L0,9 z" fill="#5a9fee"/></marker>
+</defs>
+<rect width="980" height="340" fill="#0d0d0d"/>
+<g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
+<rect x="20" y="16" width="904" height="46" rx="10" fill="#1c1c1a" stroke="#34342f"/>
+<text x="40" y="45" font-size="15" font-weight="600" fill="#ffffff">Containers on the host</text>
+<text x="904" y="45" font-size="12" text-anchor="end" fill="#8e8c85">Compose stacks from this repo</text>
+<line x1="18" y1="86" x2="962" y2="86" stroke="#34342f" stroke-width="1.5" stroke-dasharray="6 5"/>
+<rect x="310" y="75" width="356" height="22" fill="#0d0d0d"/>
+<text x="488" y="90" font-size="11.5" text-anchor="middle" fill="#8e8c85">socket proxy · no exec, volumes or secrets</text>
+<path d="M96,62 L96,101" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<text x="108" y="79" font-size="11" fill="#8e8c85">events · stats · logs</text>
+<rect x="20" y="108" width="178" height="96" rx="10" fill="#1c1c1a" stroke="#34342f" stroke-width="1"/>
+<text x="36" y="135" font-size="15" font-weight="600" fill="#ffffff">Detect</text>
+<text x="182" y="135" font-size="11" text-anchor="end" fill="#8e8c85">rules</text>
+<text x="36" y="158" font-size="12" fill="#c3c2b7">thresholds, exit codes,</text>
+<text x="36" y="174" font-size="12" fill="#c3c2b7">health checks</text>
+<rect x="256" y="108" width="178" height="96" rx="10" fill="#1c1c1a" stroke="#34342f" stroke-width="1"/>
+<text x="272" y="135" font-size="15" font-weight="600" fill="#ffffff">Gather</text>
+<text x="418" y="135" font-size="11" text-anchor="end" fill="#8e8c85">evidence</text>
+<text x="272" y="158" font-size="12" fill="#c3c2b7">logs and stats,</text>
+<text x="272" y="174" font-size="12" fill="#c3c2b7">secrets stripped</text>
+<rect x="492" y="108" width="178" height="96" rx="10" fill="#16243a" stroke="#5a9fee" stroke-width="1.75"/>
+<text x="508" y="135" font-size="15" font-weight="600" fill="#ffffff">Diagnose</text>
+<text x="654" y="135" font-size="11" text-anchor="end" fill="#5a9fee">the model</text>
+<text x="508" y="158" font-size="12" fill="#c3c2b7">explains why it broke,</text>
+<text x="508" y="176" font-size="11.5" font-weight="600" fill="#5a9fee">picks 1 of 5 actions</text>
+<rect x="728" y="108" width="178" height="96" rx="10" fill="#1c1c1a" stroke="#34342f" stroke-width="1"/>
+<text x="744" y="135" font-size="15" font-weight="600" fill="#ffffff">Decide</text>
+<text x="890" y="135" font-size="11" text-anchor="end" fill="#8e8c85">plain code</text>
+<text x="744" y="158" font-size="12" fill="#c3c2b7">mode · confidence ·</text>
+<text x="744" y="174" font-size="12" fill="#c3c2b7">circuit breakers</text>
+<path d="M203,156.0 L250,156.0" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<text x="227.0" y="146.0" font-size="11" text-anchor="middle" fill="#8e8c85">incident</text>
+<path d="M439,156.0 L486,156.0" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<text x="463.0" y="146.0" font-size="11" text-anchor="middle" fill="#8e8c85">redacted</text>
+<path d="M675,156.0 L722,156.0" stroke="#5a9fee" stroke-width="1.5" fill="none" marker-end="url(#aa)"/>
+<text x="699.0" y="146.0" font-size="11" text-anchor="middle" fill="#5a9fee">advisory</text>
+<path d="M817.0,204 L817.0,244" stroke="#8e8c85" stroke-width="1.5" fill="none"/>
+<path d="M216.0,244 L817.0,244" stroke="#8e8c85" stroke-width="1.5" fill="none"/>
+<path d="M216.0,244 L216.0,265" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="91.0" y="272" width="250" height="46" rx="23" fill="#242421" stroke="#34342f"/>
+<text x="216.0" y="293" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Notify you</text>
+<text x="216.0" y="309" font-size="11" text-anchor="middle" fill="#8e8c85">nothing is touched</text>
+<path d="M490.0,244 L490.0,265" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="365.0" y="272" width="250" height="46" rx="23" fill="#242421" stroke="#34342f"/>
+<text x="490.0" y="293" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Await approval</text>
+<text x="490.0" y="309" font-size="11" text-anchor="middle" fill="#8e8c85">you click, it acts</text>
+<path d="M764.0,244 L764.0,265" stroke="#8e8c85" stroke-width="1.5" fill="none" marker-end="url(#a)"/>
+<rect x="639.0" y="272" width="250" height="46" rx="23" fill="#242421" stroke="#34342f"/>
+<text x="764.0" y="293" font-size="13" font-weight="600" text-anchor="middle" fill="#ffffff">Restart, then verify</text>
+<text x="764.0" y="309" font-size="11" text-anchor="middle" fill="#8e8c85">auto mode only</text>
+<path d="M893.0,295.0 L954,295.0 L954,39.0 L930,39.0" stroke="#8e8c85" stroke-width="1.5" fill="none" stroke-dasharray="5 4" marker-end="url(#a)"/>
+<text x="942" y="262" font-size="11" text-anchor="end" fill="#8e8c85">the only write path</text>
+</g></svg>

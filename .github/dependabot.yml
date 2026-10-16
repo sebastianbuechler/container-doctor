@@ -1,0 +1,33 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    # Python publishes its alphas, betas and release candidates under
+    # ordinary-looking tags (3.15.0rc2). Skip them so only the final release
+    # arrives as a PR; move the range on once 3.15.0 is out.
+    ignore:
+      - dependency-name: "python"
+        versions: [">= 3.15.0.a, < 3.15.0"]
+  # The socket proxy and SMART exporter pinned in compose.example.yaml.
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3

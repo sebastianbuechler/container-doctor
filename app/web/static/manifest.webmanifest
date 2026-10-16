@@ -1,0 +1,19 @@
+{
+  "name": "Container Doctor",
+  "short_name": "Doctor",
+  "description": "Watches a Docker host's containers, diagnoses what breaks, and asks before it acts.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f9f9f7",
+  "theme_color": "#fcfcfb",
+  "user_preferences": {
+    "color_scheme_dark": { "background_color": "#0d0d0d", "theme_color": "#111110" }
+  },
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/static/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

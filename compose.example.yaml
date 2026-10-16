@@ -1,0 +1,327 @@
+# Container Doctor - a reference compose file.
+#
+# The doctor, its socket proxy (the only way it reaches Docker, and what keeps
+# it from creating containers) and an optional SMART sidecar for drive health.
+# Copy it, set the variables you need in a .env file next to it or in your
+# Docker manager's stack environment (see .env.example), and start it:
+#
+#   mkdir -p data && sudo chown 1000:1000 data
+#   docker compose -f compose.example.yaml up -d
+#
+# Every setting is passed through as `- X=${X:-}`: empty means unset and the
+# code's default applies, and the Settings page can tell which settings this
+# deployment passes. Keep that pattern when adapting it.
+services:
+  doctor-socket-proxy:
+    # This fork's ALLOW_* rules are evaluated before the global POST gate, so
+    # POST=0 and ALLOW_RESTARTS=1 is not a contradiction: restart is permitted
+    # while POST /containers/create - arbitrary host mounts - stays denied.
+    image: lscr.io/linuxserver/socket-proxy:3.4.7@sha256:e5d819de59b343c01b2fe7adc7fad3c7a60e5dba08e45f1ac317352bc08599b5
+    container_name: container-doctor-socket-proxy
+    environment:
+      # HAProxy logs every request at info, one line per poll per container.
+      # The image has no JSON log format, so keep only warnings and errors.
+      - LOG_LEVEL=warning
+      - CONTAINERS=1 # list, inspect and stats
+      - ALLOW_LOGS=1 # /containers/<id>/logs is denied by default
+      - EVENTS=1 # the die/oom/health event stream
+      - PING=1
+      - VERSION=1
+      # 0 for a read-only doctor; observe mode still works fully.
+      - ALLOW_RESTARTS=${DOCTOR_PROXY_ALLOW_POST:-1}
+      - POST=0
+      - ALLOW_START=0
+      - ALLOW_STOP=0 # ALLOW_RESTARTS already covers the doctor's stop action
+      - ALLOW_PAUSE=0
+      - ALLOW_UNPAUSE=0
+      - ALLOW_ARCHIVE=0
+      - ALLOW_CHANGES=0
+      - ALLOW_EXPORT=0
+      - ALLOW_TOP=0
+      - EXEC=0
+      # GET /images/<name>/json, for the update check. Read-only, and it
+      # exposes nothing that inspecting a container does not already.
+      - IMAGES=${DOCTOR_PROXY_ALLOW_IMAGES:-1}
+      # GET /networks, for the network map: drivers, the internal flag,
+      # subnets and networks nobody is on. Read-only - creating, connecting
+      # or removing a network is a POST or DELETE, and POST=0 denies both.
+      - NETWORKS=1
+      - INFO=0
+      - SECRETS=0
+      - SWARM=0
+      - SYSTEM=0
+      - VOLUMES=0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /run
+      - /tmp # the entrypoint renders its haproxy config here
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 128m
+    networks:
+      doctor_internal:
+        # Distinctive: the doctor is on a second network too, and Docker
+        # resolves names across every attached network.
+        aliases:
+          - doctor-socket-proxy
+    labels:
+      - doctor.enable=false # the doctor must never restart its own lifeline
+
+  doctor-smart:
+    # Reads each drive's SMART data for the doctor, so the doctor itself never
+    # needs raw disk access. The upstream exporter, unchanged; the entrypoint
+    # below only picks the host's drives: DSM names them sataN (sdX on older
+    # models and on other Linux), and smartctl's own scan does not know the
+    # sataN names.
+    # The sataN drives are read as SATA (`;sat`): left to guess, smartctl
+    # takes a drive whose model has a space in it - every "WDC WD..." - for
+    # a SCSI disk and reads no SMART from it at all, only its identity.
+    image: prometheuscommunity/smartctl-exporter:v0.15.0@sha256:a76e08dbf5db4781fefd1ed81c65ad46ae8d2849dae6b6d3acebcde2fc4e59d6
+    container_name: container-doctor-smart
+    # smartctl opens a drive read-write to send it SMART commands, which needs
+    # root, CAP_SYS_RAWIO, and the device cgroup allowing block devices.
+    # That is raw access to the disks - so this container has nothing else:
+    # no other capability, no writable filesystem, no route out (the internal
+    # network only), and no listening port on the host.
+    user: root
+    read_only: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_RAWIO
+      # NVMe drives answer SMART through the admin command set, which needs
+      # SYS_ADMIN. Without NVMe drives it can go.
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /dev:/dev:ro
+    device_cgroup_rules:
+      - "b *:* rw"
+    environment:
+      # "auto" finds the drives; or list them, space or comma separated.
+      - SMART_DEVICES=${DOCTOR_SMART_DEVICES:-auto}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set --
+        if [ "$${SMART_DEVICES:-auto}" = auto ]; then
+          for d in /dev/sata[0-9] /dev/sata[0-9][0-9]; do
+            [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d;sat"
+          done
+          for d in /dev/nvme[0-9]n1; do
+            [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d"
+          done
+          if [ $$# -eq 0 ]; then
+            for d in /dev/sd[a-z] /dev/sd[a-z][a-z]; do
+              [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d"
+            done
+          fi
+        else
+          for d in $$(echo "$$SMART_DEVICES" | tr ',' ' '); do
+            set -- "$$@" "--smartctl.device=$$d"
+          done
+        fi
+        [ $$# -eq 0 ] && set -- --smartctl.scan
+        # Every five minutes is plenty for SMART; a drive asleep is skipped,
+        # not woken.
+        exec /bin/smartctl_exporter "$$@" --smartctl.interval=5m --smartctl.powermode-check=standby
+    restart: unless-stopped
+    mem_limit: 64m
+    networks:
+      doctor_internal:
+        aliases:
+          - doctor-smart
+    labels:
+      - doctor.enable=false # a sidecar of the doctor's; nothing to diagnose
+
+  container-doctor:
+    # Never add `build:` here - a git deploy (Portainer's, for one) runs
+    # `compose pull`, which would then fail on a name no registry has.
+    # Published by CI.
+    image: ghcr.io/sebastianbuechler/container-doctor:${DOCTOR_IMAGE_TAG:-latest}
+    # Compose reuses an image it already has, and not every manager can force
+    # a re-pull (Portainer's "Re-pull image" is Business Edition only). Without
+    # this, a redeploy of a moving tag recreates the container from the copy on
+    # the host and reports success while running the old code.
+    pull_policy: always
+    container_name: container-doctor
+    depends_on:
+      - doctor-socket-proxy
+    environment:
+      # Defaults live in the doctor's code (app/config.py), not here: every
+      # setting is passed as ${X:-}, so empty means "not set in the stack
+      # environment" and the code's default applies. The few with a default
+      # here describe this deployment - where the proxy, disks, ntfy and the
+      # public URL are.
+      - TZ=${TZ:-UTC}
+      - DOCKER_HOST=${DOCTOR_DOCKER_HOST:-tcp://doctor-socket-proxy:2375}
+      # observe | suggest | auto
+      - DOCTOR_MODE=${DOCTOR_MODE:-}
+      - DOCTOR_AUTO_ACTIONS=${DOCTOR_AUTO_ACTIONS:-}
+      - DOCTOR_MIN_CONFIDENCE=${DOCTOR_MIN_CONFIDENCE:-}
+      - DOCTOR_IGNORE_CONTAINERS=${DOCTOR_IGNORE_CONTAINERS:-}
+      - DOCTOR_LLM_PROVIDER=${DOCTOR_LLM_PROVIDER:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DOCTOR_MODEL=${DOCTOR_MODEL:-}
+      - DOCTOR_EFFORT=${DOCTOR_EFFORT:-}
+      - DOCTOR_DAILY_USD_BUDGET=${DOCTOR_DAILY_USD_BUDGET:-}
+      - DOCTOR_DAILY_CALL_LIMIT=${DOCTOR_DAILY_CALL_LIMIT:-}
+      # USD per million tokens; -1 uses the built-in Anthropic table.
+      - DOCTOR_PRICE_IN_PER_MTOK=${DOCTOR_PRICE_IN_PER_MTOK:-}
+      - DOCTOR_PRICE_OUT_PER_MTOK=${DOCTOR_PRICE_OUT_PER_MTOK:-}
+      - DOCTOR_LLM_MAX_RETRIES=${DOCTOR_LLM_MAX_RETRIES:-}
+      - DOCTOR_LLM_TIMEOUT=${DOCTOR_LLM_TIMEOUT:-}
+      - DOCTOR_DIAGNOSIS_CACHE_HOURS=${DOCTOR_DIAGNOSIS_CACHE_HOURS:-}
+      # -1 never sends `temperature`, which reasoning models reject.
+      - DOCTOR_LLM_TEMPERATURE=${DOCTOR_LLM_TEMPERATURE:-}
+      - DOCTOR_OPENAI_BASE_URL=${DOCTOR_OPENAI_BASE_URL:-}
+      - DOCTOR_OPENAI_API_KEY=${DOCTOR_OPENAI_API_KEY:-}
+      - DOCTOR_MAX_ACTIONS_PER_CONTAINER_PER_HOUR=${DOCTOR_MAX_ACTIONS_PER_CONTAINER_PER_HOUR:-}
+      - DOCTOR_MAX_ACTIONS_GLOBAL_PER_HOUR=${DOCTOR_MAX_ACTIONS_GLOBAL_PER_HOUR:-}
+      - DOCTOR_ACTION_COOLDOWN_MINUTES=${DOCTOR_ACTION_COOLDOWN_MINUTES:-}
+      - DOCTOR_VERIFY_DELAY=${DOCTOR_VERIFY_DELAY:-}
+      - DOCTOR_POLL_INTERVAL=${DOCTOR_POLL_INTERVAL:-}
+      - DOCTOR_POLL_CONCURRENCY=${DOCTOR_POLL_CONCURRENCY:-}
+      - DOCTOR_CPU_THRESHOLD=${DOCTOR_CPU_THRESHOLD:-}
+      - DOCTOR_MEM_THRESHOLD=${DOCTOR_MEM_THRESHOLD:-}
+      - DOCTOR_RESOURCE_BREACH_POLLS=${DOCTOR_RESOURCE_BREACH_POLLS:-}
+      - DOCTOR_RESTART_LOOP_COUNT=${DOCTOR_RESTART_LOOP_COUNT:-}
+      - DOCTOR_RESTART_LOOP_WINDOW_MINUTES=${DOCTOR_RESTART_LOOP_WINDOW_MINUTES:-}
+      - DOCTOR_LOG_LINES=${DOCTOR_LOG_LINES:-}
+      - DOCTOR_LOG_ERROR_BURST=${DOCTOR_LOG_ERROR_BURST:-}
+      - DOCTOR_LOG_LEVEL_ERROR_BURST=${DOCTOR_LOG_LEVEL_ERROR_BURST:-}
+      - DOCTOR_LOG_FATAL_THRESHOLD=${DOCTOR_LOG_FATAL_THRESHOLD:-}
+      - DOCTOR_LOG_IGNORE_PATTERN=${DOCTOR_LOG_IGNORE_PATTERN:-}
+      - DOCTOR_DEPLOY_SETTLE_MINUTES=${DOCTOR_DEPLOY_SETTLE_MINUTES:-}
+      - DOCTOR_DIE_GRACE_SECONDS=${DOCTOR_DIE_GRACE_SECONDS:-}
+      - DOCTOR_LOG_MAX_AGE_MINUTES=${DOCTOR_LOG_MAX_AGE_MINUTES:-}
+      - DOCTOR_INCIDENT_DEDUP_HOURS=${DOCTOR_INCIDENT_DEDUP_HOURS:-}
+      - DOCTOR_AUTO_RESOLVE_HOURS=${DOCTOR_AUTO_RESOLVE_HOURS:-}
+      - DOCTOR_RETENTION_DAYS=${DOCTOR_RETENTION_DAYS:-}
+      # Free space is a property of the filesystem, so /data reports all of
+      # the volume it lives on without mounting it.
+      - DOCTOR_DISK_PATHS=${DOCTOR_DISK_PATHS:-/data}
+      - DOCTOR_DISK_THRESHOLD=${DOCTOR_DISK_THRESHOLD:-}
+      - DOCTOR_DISK_CRITICAL=${DOCTOR_DISK_CRITICAL:-}
+      - DOCTOR_DISK_FORECAST_DAYS=${DOCTOR_DISK_FORECAST_DAYS:-}
+      - DOCTOR_DISK_TREND_WINDOW_DAYS=${DOCTOR_DISK_TREND_WINDOW_DAYS:-}
+      - DOCTOR_MDSTAT_PATH=${DOCTOR_MDSTAT_PATH:-}
+      # Which arrays make up each volume, scrub results and per-disk read
+      # errors. Docker mounts the host's /sys read-only already.
+      - DOCTOR_SYSFS_PATH=${DOCTOR_SYSFS_PATH:-}
+      # Drive health from the doctor-smart sidecar above. off turns it off.
+      - DOCTOR_SMART_URL=${DOCTOR_SMART_URL:-}
+      - DOCTOR_SMART_TEMP_C=${DOCTOR_SMART_TEMP_C:-}
+      - DOCTOR_SMART_NVME_TEMP_C=${DOCTOR_SMART_NVME_TEMP_C:-}
+      - DOCTOR_SMART_WEAR_PCT=${DOCTOR_SMART_WEAR_PCT:-}
+      # The host itself: CPU, memory, swap, load, disk activity, temperatures.
+      # /proc is system-wide, so no extra mount or permission is needed.
+      - DOCTOR_PROC_PATH=${DOCTOR_PROC_PATH:-}
+      - DOCTOR_HOST_MEM_AVAILABLE_PCT=${DOCTOR_HOST_MEM_AVAILABLE_PCT:-}
+      - DOCTOR_HOST_SWAP_IN_PER_S=${DOCTOR_HOST_SWAP_IN_PER_S:-}
+      - DOCTOR_HOST_LOAD_PER_CORE=${DOCTOR_HOST_LOAD_PER_CORE:-}
+      - DOCTOR_HOST_IOWAIT_PCT=${DOCTOR_HOST_IOWAIT_PCT:-}
+      - DOCTOR_HOST_TEMP_C=${DOCTOR_HOST_TEMP_C:-}
+      - DOCTOR_HOST_BREACH_POLLS=${DOCTOR_HOST_BREACH_POLLS:-}
+      # Internet and DNS, checked from this container. 0 turns them off;
+      # "none" empties a list. DNS servers on your network (Pi-hole, the
+      # router) are worth listing: each is then checked on its own.
+      - DOCTOR_NET_CHECK_SECONDS=${DOCTOR_NET_CHECK_SECONDS:-}
+      - DOCTOR_NET_FAIL_ROUNDS=${DOCTOR_NET_FAIL_ROUNDS:-}
+      - DOCTOR_NET_TCP_TARGETS=${DOCTOR_NET_TCP_TARGETS:-}
+      - DOCTOR_NET_DNS_NAMES=${DOCTOR_NET_DNS_NAMES:-}
+      - DOCTOR_NET_DNS_SERVERS=${DOCTOR_NET_DNS_SERVERS:-}
+      - DOCTOR_NET_HTTP_URLS=${DOCTOR_NET_HTTP_URLS:-}
+      - DOCTOR_IMAGE_CHECK_HOURS=${DOCTOR_IMAGE_CHECK_HOURS:-}
+      - DOCTOR_RELEASE_NOTES=${DOCTOR_RELEASE_NOTES:-}
+      # Days a release must be on Docker Hub before it counts as newer - match
+      # your Dependabot or Renovate cooldown, if you use one. 0: at once.
+      - DOCTOR_UPDATE_COOLDOWN_DAYS=${DOCTOR_UPDATE_COOLDOWN_DAYS:-}
+      # A Redeploy button for new builds: runs a GitHub Actions workflow in
+      # the repository the stacks are deployed from (DOCTOR_DEPLOY_REPO; see
+      # docs/redeploy-workflow.yml). A fine-grained token on that repository
+      # only, Actions read and write, Contents read. Empty: report only.
+      - DOCTOR_GITHUB_TOKEN=${DOCTOR_GITHUB_TOKEN:-}
+      - DOCTOR_DEPLOY_REPO=${DOCTOR_DEPLOY_REPO:-}
+      - DOCTOR_DEPLOY_WORKFLOW=${DOCTOR_DEPLOY_WORKFLOW:-}
+      - DOCTOR_DEPLOY_REF=${DOCTOR_DEPLOY_REF:-}
+      # What deploys the stacks, in words for the diagnosis and the page:
+      # a manager's name (Portainer, Coolify...) and how a change gets there.
+      - DOCTOR_DOCKER_MANAGER=${DOCTOR_DOCKER_MANAGER:-}
+      - DOCTOR_DEPLOY_METHOD=${DOCTOR_DEPLOY_METHOD:-}
+      # What the host is (auto, synology, generic) and what to call it.
+      - DOCTOR_HOST_KIND=${DOCTOR_HOST_KIND:-}
+      - DOCTOR_HOST_NAME=${DOCTOR_HOST_NAME:-}
+      - DOCTOR_BRIEFING=${DOCTOR_BRIEFING:-}
+      - DOCTOR_BRIEFING_MODEL=${DOCTOR_BRIEFING_MODEL:-}
+      - DOCTOR_BRIEFING_REFRESH_MINUTES=${DOCTOR_BRIEFING_REFRESH_MINUTES:-}
+      # Every request to a model, as sent, on the LLM page. 0 keeps none.
+      - DOCTOR_LLM_LOG_DAYS=${DOCTOR_LLM_LOG_DAYS:-}
+      # A decision model's second opinion before an incident opens: off,
+      # shadow (record verdicts, change nothing) or on. Start with shadow.
+      - DOCTOR_CLASSIFIER=${DOCTOR_CLASSIFIER:-}
+      - DOCTOR_CLASSIFIER_PROVIDER=${DOCTOR_CLASSIFIER_PROVIDER:-}
+      - DOCTOR_CLASSIFIER_MODEL=${DOCTOR_CLASSIFIER_MODEL:-}
+      # An OpenRouter key; give it a credit limit of its own on openrouter.ai.
+      # Unset: the diagnosis's DOCTOR_OPENAI_API_KEY, if that is an OpenRouter one.
+      - DOCTOR_CLASSIFIER_API_KEY=${DOCTOR_CLASSIFIER_API_KEY:-}
+      - DOCTOR_CLASSIFIER_SUPPRESS_AT=${DOCTOR_CLASSIFIER_SUPPRESS_AT:-}
+      - DOCTOR_CLASSIFIER_DAILY_CALLS=${DOCTOR_CLASSIFIER_DAILY_CALLS:-}
+      - DOCTOR_CLASSIFIER_DAILY_USD=${DOCTOR_CLASSIFIER_DAILY_USD:-}
+      - DOCTOR_CLASSIFIER_MAX_PER_MINUTE=${DOCTOR_CLASSIFIER_MAX_PER_MINUTE:-}
+      - DOCTOR_CLASSIFIER_CACHE_HOURS=${DOCTOR_CLASSIFIER_CACHE_HOURS:-}
+      - DOCTOR_CLASSIFIER_TIMEOUT=${DOCTOR_CLASSIFIER_TIMEOUT:-}
+      - DOCTOR_NTFY_URL=${DOCTOR_NTFY_URL:-}
+      - DOCTOR_NTFY_TOPIC=${DOCTOR_NTFY_TOPIC:-}
+      - DOCTOR_NTFY_TOKEN=${DOCTOR_NTFY_TOKEN:-}
+      # Sign-in. With OIDC configured the password is refused unless the
+      # fallback is switched on, so there is one way in by default.
+      - DOCTOR_OIDC_ISSUER=${DOCTOR_OIDC_ISSUER:-}
+      - DOCTOR_OIDC_CLIENT_ID=${DOCTOR_OIDC_CLIENT_ID:-}
+      - DOCTOR_OIDC_CLIENT_SECRET=${DOCTOR_OIDC_CLIENT_SECRET:-}
+      - DOCTOR_PUBLIC_URL=${DOCTOR_PUBLIC_URL:-}
+      - DOCTOR_OIDC_ALLOWED_GROUPS=${DOCTOR_OIDC_ALLOWED_GROUPS:-}
+      - DOCTOR_SESSION_SECRET=${DOCTOR_SESSION_SECRET:-}
+      - DOCTOR_SESSION_HOURS=${DOCTOR_SESSION_HOURS:-}
+      - DOCTOR_WEB_PASSWORD_FALLBACK=${DOCTOR_WEB_PASSWORD_FALLBACK:-}
+      # false makes the Settings page read-only: the stack environment alone
+      # changes settings.
+      - DOCTOR_SETTINGS_EDITABLE=${DOCTOR_SETTINGS_EDITABLE:-}
+      - DOCTOR_WEB_USER=${DOCTOR_WEB_USER:-}
+      - DOCTOR_WEB_PASSWORD=${DOCTOR_WEB_PASSWORD:-}
+      - DOCTOR_LOG_LEVEL=${DOCTOR_LOG_LEVEL:-}
+    # Where the database lives on the host, and who owns it there: create
+    # the directory and chown it to DOCTOR_UID:DOCTOR_GID before the first start.
+    volumes:
+      - ${DOCTOR_DATA_VOLUME:-./data}:/data
+    user: "${DOCTOR_UID:-1000}:${DOCTOR_GID:-1000}"
+    # The dashboard. Put a reverse proxy with TLS in front of it before
+    # exposing it beyond your LAN, and set DOCTOR_PUBLIC_URL to its address.
+    ports:
+      - "${DOCTOR_PORT:-8080}:8080"
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 512m
+    cpu_shares: 512
+    labels:
+      - doctor.enable=false # never diagnose or restart yourself
+    networks:
+      - doctor_internal
+      - doctor_external
+
+networks:
+  doctor_internal:
+    internal: true
+  # The doctor's way out: the LLM API, registries, ntfy, and the dashboard's port.
+  doctor_external: {}

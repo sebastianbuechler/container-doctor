@@ -1,0 +1,49 @@
+# What Container Doctor's Redeploy button needs: a workflow in the repository
+# the stacks are deployed from (DOCTOR_DEPLOY_REPO), named by
+# DOCTOR_DEPLOY_WORKFLOW (default deploy-stacks.yml), that it can start by hand.
+#
+# The contract:
+#   - workflow_dispatch with two inputs: `stacks`, the stack to redeploy - a
+#     top-level folder with a compose file - and `requested_by`, a marker.
+#   - the marker in the run's name (run-name), so the doctor finds its run
+#     again and can follow it to the end;
+#   - a run that fails when the redeploy did not happen.
+#
+# How the redeploy happens is up to you. This one POSTs to the stack's
+# webhook in your Docker manager (Portainer, Coolify, Komodo...), kept as the
+# repository secret DEPLOY_WEBHOOK_<FOLDER>: arr-stack -> DEPLOY_WEBHOOK_ARR_STACK.
+name: Deploy stacks
+
+on:
+  workflow_dispatch:
+    inputs:
+      stacks:
+        description: Stack folder to redeploy
+        required: true
+      requested_by:
+        description: Who asked; Container Doctor puts its marker here
+        required: false
+        default: ""
+
+run-name: Deploy ${{ inputs.stacks }} ${{ inputs.requested_by }}
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Call the stack's webhook
+        env:
+          STACK: ${{ inputs.stacks }}
+          SECRETS: ${{ toJSON(secrets) }}
+        run: |
+          name="DEPLOY_WEBHOOK_$(tr '[:lower:]-' '[:upper:]_' <<<"$STACK")"
+          url="$(jq -r --arg n "$name" '.[$n] // empty' <<<"$SECRETS")"
+          if [ -z "$url" ]; then
+            echo "::error::$name is not set"
+            exit 1
+          fi
+          curl --fail --silent --show-error --request POST --max-time 180 "$url"

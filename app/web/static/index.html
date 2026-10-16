@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Container Doctor</title>
+<link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-180.png">
+<link rel="manifest" href="/static/manifest.webmanifest">
+<meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#111110" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Doctor">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+
+<!-- Icons, drawn once and referenced by <use>. Feather-style strokes. -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none" aria-hidden="true">
+  <symbol id="i-overview" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></symbol>
+  <symbol id="i-incidents" viewBox="0 0 24 24"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></symbol>
+  <symbol id="i-containers" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></symbol>
+  <symbol id="i-storage" viewBox="0 0 24 24"><line x1="22" y1="12" x2="2" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" y1="16" x2="6.01" y2="16"/><line x1="10" y1="16" x2="10.01" y2="16"/></symbol>
+  <symbol id="i-host" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="8" rx="1.5"/><rect x="3" y="13" width="18" height="8" rx="1.5"/><line x1="7" y1="7" x2="7.01" y2="7"/><line x1="7" y1="17" x2="7.01" y2="17"/><line x1="11" y1="7" x2="17" y2="7"/><line x1="11" y1="17" x2="17" y2="17"/></symbol>
+  <symbol id="i-network" viewBox="0 0 24 24"><rect x="9" y="2" width="6" height="5" rx="1"/><rect x="2" y="17" width="6" height="5" rx="1"/><rect x="16" y="17" width="6" height="5" rx="1"/><path d="M12 7v5"/><path d="M5 17v-3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v3"/></symbol>
+  <symbol id="i-updates" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></symbol>
+  <symbol id="i-activity" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-filter" viewBox="0 0 24 24"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3l1.8 4.9L19 9.7l-5.2 1.8L12 16.4l-1.8-4.9L5 9.7l5.2-1.8z"/><path d="M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z"/></symbol>
+  <symbol id="i-cards" viewBox="0 0 24 24"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></symbol>
+  <symbol id="i-rows" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="1.5"/><rect x="3" y="13" width="18" height="7" rx="1.5"/></symbol>
+  <symbol id="i-compact" viewBox="0 0 24 24"><line x1="3" y1="5" x2="21" y2="5"/><line x1="3" y1="9.67" x2="21" y2="9.67"/><line x1="3" y1="14.33" x2="21" y2="14.33"/><line x1="3" y1="19" x2="21" y2="19"/></symbol>
+</svg>
+
+<section id="signin" class="signin" hidden>
+  <div class="signin-card">
+    <img class="signin-mark" src="/static/icon.svg" alt="" width="56" height="56">
+    <h2>Container Doctor</h2>
+    <a class="btn btn-primary signin-btn" href="/auth/login">Sign in with Pocket ID</a>
+    <p class="provider-status" id="provider-status" data-state="checking" role="status" hidden>
+      <span class="provider-dot" aria-hidden="true"></span>
+      <span id="provider-status-text">Checking Pocket ID…</span>
+    </p>
+  </div>
+</section>
+
+<div class="shell" id="shell">
+  <aside class="sidebar" aria-label="Sections">
+    <a class="brand" href="#/overview">
+      <img class="brand-mark" src="/static/icon.svg" alt="" width="28" height="28">
+      <span>Container Doctor</span>
+    </a>
+    <nav class="nav" id="nav">
+      <a class="nav-item" href="#/overview" data-nav="overview"><svg><use href="#i-overview"/></svg><span>Overview</span></a>
+      <a class="nav-item" href="#/incidents" data-nav="incidents"><svg><use href="#i-incidents"/></svg><span>Incidents</span><b class="nav-badge" data-badge="incidents" hidden></b></a>
+      <a class="nav-item" href="#/containers" data-nav="containers"><svg><use href="#i-containers"/></svg><span>Containers</span><b class="nav-badge" data-badge="containers" hidden></b></a>
+      <a class="nav-item" href="#/storage" data-nav="storage"><svg><use href="#i-storage"/></svg><span>Storage</span><b class="nav-badge" data-badge="storage" hidden></b></a>
+      <a class="nav-item" href="#/host" data-nav="host"><svg><use href="#i-host"/></svg><span>Host</span><b class="nav-badge" data-badge="host" hidden></b></a>
+      <a class="nav-item" href="#/network" data-nav="network"><svg><use href="#i-network"/></svg><span>Network</span><b class="nav-badge" data-badge="network" hidden></b></a>
+      <a class="nav-item" href="#/updates" data-nav="updates"><svg><use href="#i-updates"/></svg><span>Updates</span><b class="nav-badge" data-badge="updates" hidden></b></a>
+      <a class="nav-item" href="#/activity" data-nav="activity"><svg><use href="#i-activity"/></svg><span>Activity</span></a>
+      <a class="nav-item" href="#/llm" data-nav="llm"><svg><use href="#i-spark"/></svg><span>LLM</span></a>
+      <a class="nav-item" href="#/settings" data-nav="settings"><svg><use href="#i-settings"/></svg><span>Settings</span></a>
+    </nav>
+  </aside>
+
+  <div class="main">
+    <header class="topbar">
+      <a class="topbar-brand" href="#/overview" aria-label="Overview">
+        <img src="/static/icon.svg" alt="" width="26" height="26">
+      </a>
+      <div class="topbar-title">
+        <h1 id="page-title">Overview</h1>
+        <p id="page-sub" class="page-sub"></p>
+      </div>
+      <div class="topbar-right">
+        <span class="poll" id="poll" data-state="connecting" role="img" tabindex="0" aria-label="Connecting to Docker">
+          <svg viewBox="0 0 36 36" aria-hidden="true">
+            <circle class="poll-track" cx="18" cy="18" r="15"></circle>
+            <circle class="poll-fill" id="poll-fill" cx="18" cy="18" r="15"></circle>
+          </svg>
+          <span class="poll-tip" id="poll-tip" aria-hidden="true">connecting</span>
+        </span>
+        <div id="account" class="account" hidden>
+          <button type="button" id="account-btn" class="account-btn" aria-haspopup="true" aria-expanded="false">
+            <span id="account-avatar" class="avatar" aria-hidden="true"></span>
+            <span id="account-name" class="account-name"></span>
+          </button>
+          <div id="account-menu" class="account-menu" role="menu" hidden></div>
+        </div>
+      </div>
+    </header>
+
+    <div id="offline" class="offline" role="alert" hidden>
+      <svg class="offline-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M1 1l22 22"/><path d="M16.72 11.06A10.94 10.94 0 0 1 19 12.55"/><path d="M5 12.55a10.94 10.94 0 0 1 5.17-2.39"/><path d="M10.71 5.05A16 16 0 0 1 22.58 9"/><path d="M1.42 9a15.91 15.91 0 0 1 4.7-2.88"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><line x1="12" y1="20" x2="12.01" y2="20"/></svg>
+      <div class="offline-body">
+        <strong id="offline-title">Can't reach Container Doctor</strong>
+        <p id="offline-text"></p>
+        <div class="offline-actions">
+          <button type="button" class="btn btn-small refresh-btn" id="offline-retry"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Try again</span></button>
+          <span class="offline-when" id="offline-when"></span>
+        </div>
+      </div>
+    </div>
+
+    <main id="dashboard">
+      <div id="warnings" class="warnings" hidden></div>
+
+      <!-- Overview: what is going on, then the numbers behind it. -->
+      <section class="view" data-view="overview" aria-labelledby="page-title">
+        <article class="briefing" id="briefing" aria-live="polite">
+          <p class="briefing-loading">Reading the current state&hellip;</p>
+        </article>
+
+        <section class="tiles" aria-label="Summary">
+          <article class="tile">
+            <h2>Mode <button type="button" class="info" data-info="mode" aria-label="About modes">i</button></h2>
+            <p class="tile-value"><a class="tile-link" href="#/settings" id="tile-mode">&mdash;</a></p>
+            <p class="tile-note" id="tile-mode-note">how far the doctor may go on its own</p>
+          </article>
+          <article class="tile">
+            <h2>Incidents <button type="button" class="info" data-info="incidents" aria-label="About the incident counts">i</button></h2>
+            <p class="tile-value"><a class="tile-link" href="#/incidents" data-jump-filter="active" id="tile-incidents">&mdash;</a></p>
+            <p class="tile-note is-data" id="tile-incidents-note">&mdash;</p>
+          </article>
+          <article class="tile">
+            <h2>Awaiting approval <button type="button" class="info" data-info="approval" aria-label="About approvals">i</button></h2>
+            <p class="tile-value"><a class="tile-link" href="#/incidents" data-jump-filter="awaiting_approval" id="tile-pending">&mdash;</a></p>
+            <p class="tile-note" id="tile-pending-note">actions proposed, not yet run</p>
+          </article>
+          <article class="tile">
+            <h2 id="tile-spend-heading">LLM usage today <button type="button" class="info" data-info="usage" aria-label="About cost">i</button></h2>
+            <p class="tile-value"><a class="tile-link" href="#/llm" id="tile-spend">&mdash;</a></p>
+            <div class="meter" id="budget-meter" role="img" aria-label="Daily budget usage">
+              <div class="meter-fill" id="budget-fill" style="width:0%"></div>
+            </div>
+            <p class="tile-note" id="tile-spend-note">&nbsp;</p>
+          </article>
+        </section>
+      </section>
+
+      <section class="view" data-view="incidents" hidden>
+        <section class="panel" id="panel-incidents" aria-labelledby="incidents-heading">
+          <div class="panel-head">
+            <h2 id="incidents-heading">Incidents <button type="button" class="info" data-info="filters" aria-label="About the filters">i</button></h2>
+            <div class="filters" role="group" aria-label="Filter incidents">
+              <button type="button" class="chip is-active" data-filter="active">Open</button>
+              <button type="button" class="chip" data-filter="awaiting_approval">Awaiting approval</button>
+              <button type="button" class="chip" data-filter="resolved">Resolved</button>
+              <button type="button" class="chip" data-filter="dismissed">Dismissed</button>
+              <button type="button" class="chip" data-filter="all">All</button>
+            </div>
+            <div class="panel-tools">
+              <button type="button" class="btn btn-small" id="dismiss-all">Dismiss all open</button>
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Incident layout">
+                <button type="button" role="radio" data-density="incidents" data-mode="full" aria-checked="true"
+                        aria-label="Detailed rows" title="Detailed rows"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="incidents" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div id="incidents" class="incident-list"></div>
+          <div id="incidents-more"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="containers" hidden>
+        <section class="panel" id="panel-containers" aria-labelledby="containers-heading">
+          <div class="panel-head">
+            <h2 id="containers-heading">Containers <button type="button" class="info" data-info="containers" aria-label="About watched containers">i</button></h2>
+            <p class="panel-sub" id="containers-sub"></p>
+            <div class="panel-tools">
+              <input type="search" id="container-search" class="search"
+                     placeholder="Filter by name, image or stack" aria-label="Filter containers">
+              <button type="button" class="btn btn-small refresh-btn" id="poll-now"
+                      aria-label="Read Docker again now"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Poll now</span></button>
+              <label class="toggle">
+                <input type="checkbox" id="only-issues"> Only issues
+              </label>
+              <div class="segmented" role="radiogroup" aria-label="Arrange containers">
+                <button type="button" role="radio" data-group="flat" aria-checked="true">List</button>
+                <button type="button" role="radio" data-group="stacks" aria-checked="false">Stacks</button>
+              </div>
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Container layout">
+                <button type="button" role="radio" data-density="containers" data-mode="full" aria-checked="true"
+                        aria-label="Cards" title="Cards"><svg class="icon"><use href="#i-cards"/></svg></button>
+                <button type="button" role="radio" data-density="containers" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+            <div class="progress-strip" id="poll-progress" hidden>
+              <div class="progress-bar" role="progressbar" aria-label="Poll progress"
+                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+              <p class="progress-text" aria-live="polite"></p>
+            </div>
+          </div>
+          <div class="container-grid" id="containers"></div>
+          <div id="containers-more"></div>
+        </section>
+        <section class="panel" id="panel-memory" aria-labelledby="memory-heading">
+          <div class="panel-head">
+            <h2 id="memory-heading">Memory limits <button type="button" class="info" data-info="memory" aria-label="About memory limits">i</button></h2>
+            <p class="panel-sub" id="memory-sub"></p>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Memory limit layout">
+                <button type="button" role="radio" data-density="memory" data-mode="full" aria-checked="true"
+                        aria-label="With reasons" title="With reasons"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="memory" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <ol class="mem-list" id="memory"></ol>
+        </section>
+      </section>
+
+      <section class="view" data-view="storage" hidden>
+        <section class="panel" id="disk-panel" aria-labelledby="disk-heading">
+          <div class="panel-head">
+            <h2 id="disk-heading">Storage <button type="button" class="info" data-info="storage" aria-label="About storage">i</button></h2>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Storage layout">
+                <button type="button" role="radio" data-density="storage" data-mode="full" aria-checked="true"
+                        aria-label="With charts" title="With charts"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="storage" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="disk-list" id="disks"></div>
+          <div class="array-list" id="arrays"></div>
+        </section>
+        <section class="panel" id="panel-smart" aria-labelledby="smart-heading">
+          <div class="panel-head">
+            <h2 id="smart-heading">Drive health <button type="button" class="info" data-info="smart" aria-label="About drive health">i</button></h2>
+            <p class="panel-sub" id="smart-sub"></p>
+          </div>
+          <div id="drive-health"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="host" hidden>
+        <section class="panel" id="panel-host" aria-labelledby="host-heading">
+          <div class="panel-head">
+            <h2 id="host-heading"><span id="host-title">The host</span> <button type="button" class="info" data-info="host" aria-label="About the host">i</button></h2>
+            <p class="panel-sub" id="host-sub"></p>
+          </div>
+          <div class="host-alerts" id="host-alerts"></div>
+          <div class="host-tiles" id="host-tiles"></div>
+        </section>
+        <section class="panel" id="panel-host-history" aria-labelledby="host-history-heading">
+          <div class="panel-head">
+            <h2 id="host-history-heading">History <button type="button" class="info" data-info="hostHistory" aria-label="About the history">i</button></h2>
+            <div class="panel-tools">
+              <div class="segmented" role="radiogroup" aria-label="History range">
+                <button type="button" role="radio" data-host-hours="24" aria-checked="true">24 hours</button>
+                <button type="button" role="radio" data-host-hours="168" aria-checked="false">7 days</button>
+              </div>
+            </div>
+          </div>
+          <div class="host-charts" id="host-charts"></div>
+          <div class="host-reboots" id="host-reboots"></div>
+        </section>
+        <section class="panel" id="panel-host-detail" aria-labelledby="host-detail-heading">
+          <div class="panel-head">
+            <h2 id="host-detail-heading">Disks, pressure and sensors <button type="button" class="info" data-info="hostDetail" aria-label="About disks, pressure and sensors">i</button></h2>
+          </div>
+          <div class="host-detail" id="host-detail"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="network" hidden>
+        <section class="panel" id="panel-connectivity" aria-labelledby="connectivity-heading">
+          <div class="panel-head">
+            <h2 id="connectivity-heading">Internet and DNS <button type="button" class="info" data-info="connectivity" aria-label="About the internet and DNS checks">i</button></h2>
+            <p class="panel-sub" id="connectivity-sub"></p>
+          </div>
+          <div id="connectivity"></div>
+        </section>
+        <section class="panel" id="panel-network" aria-labelledby="network-heading">
+          <div class="panel-head">
+            <h2 id="network-heading">Networks <button type="button" class="info" data-info="network" aria-label="About networks">i</button></h2>
+            <p class="panel-sub" id="network-sub"></p>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Network layout">
+                <button type="button" role="radio" data-density="network" data-mode="full" aria-checked="true"
+                        aria-label="Map" title="Map"><svg class="icon"><use href="#i-cards"/></svg></button>
+                <button type="button" role="radio" data-density="network" data-mode="compact" aria-checked="false"
+                        aria-label="Matrix" title="Matrix"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="net-stats" id="network-stats"></div>
+          <div class="net-findings" id="network-findings"></div>
+          <div class="net-bridges" id="network-bridges"></div>
+          <div class="net-body" id="network-map"></div>
+        </section>
+        <section class="panel" id="panel-ports" aria-labelledby="ports-heading">
+          <div class="panel-head">
+            <h2 id="ports-heading">Published ports <button type="button" class="info" data-info="ports" aria-label="About published ports">i</button></h2>
+            <p class="panel-sub" id="ports-sub"></p>
+          </div>
+          <div id="network-ports"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="updates" hidden>
+        <section class="panel" id="image-panel" aria-labelledby="image-heading">
+          <div class="panel-head">
+            <h2 id="image-heading">Image updates <button type="button" class="info" data-info="images" aria-label="About image updates">i</button></h2>
+            <div class="panel-tools">
+              <button type="button" class="btn btn-small refresh-btn" id="images-refresh"
+                      aria-label="Check the registries again"><svg class="icon" aria-hidden="true"><use href="#i-refresh"/></svg><span>Check now</span><span class="refresh-age" data-ago="" hidden></span></button>
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Image update layout">
+                <button type="button" role="radio" data-density="updates" data-mode="full" aria-checked="true"
+                        aria-label="Detailed rows" title="Detailed rows"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="updates" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+            <div class="progress-strip" id="image-progress" hidden>
+              <div class="progress-bar" role="progressbar" aria-label="Registry check progress"
+                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span></span></div>
+              <p class="progress-text" aria-live="polite"></p>
+            </div>
+          </div>
+          <div class="image-list" id="image-updates"></div>
+          <div id="images-more"></div>
+          <div class="image-list image-cooling" id="image-cooling" hidden></div>
+          <div class="image-list image-unchecked" id="image-unchecked" hidden></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="activity" hidden>
+        <section class="panel" id="panel-actions" aria-labelledby="actions-heading">
+          <div class="panel-head">
+            <h2 id="actions-heading">Action log</h2>
+            <p class="panel-sub">Every decision, including the ones deliberately not taken.</p>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Action log layout">
+                <button type="button" role="radio" data-density="activity" data-mode="full" aria-checked="true"
+                        aria-label="With reasons" title="With reasons"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="activity" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="audit-head" aria-hidden="true">
+            <span>When</span><span>Container</span><span>Action</span><span>Outcome</span>
+          </div>
+          <ol class="audit" id="actions"></ol>
+          <div id="actions-more"></div>
+        </section>
+        <section class="panel" id="panel-changes" aria-labelledby="changes-heading">
+          <div class="panel-head">
+            <h2 id="changes-heading">Changes <button type="button" class="info" data-info="changes" aria-label="About changes">i</button></h2>
+            <p class="panel-sub">Recreates, new builds, restarts and stops, as Docker timed them.</p>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Change list layout">
+                <button type="button" role="radio" data-density="changes" data-mode="full" aria-checked="true"
+                        aria-label="Detailed rows" title="Detailed rows"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="changes" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="audit-head" aria-hidden="true">
+            <span>When</span><span>Container</span><span>What changed</span><span>Kind</span>
+          </div>
+          <ol class="audit" id="changes"></ol>
+          <div id="changes-more"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="llm" hidden>
+        <section class="panel" id="panel-spend" aria-labelledby="spend-heading">
+          <div class="panel-head">
+            <h2 id="spend-heading">Spend <button type="button" class="info" data-info="spend" aria-label="About spend">i</button></h2>
+            <p class="panel-sub" id="spend-sub"></p>
+            <div class="panel-tools">
+              <div class="segmented" role="radiogroup" aria-label="Range">
+                <button type="button" role="radio" data-spend-days="14" aria-checked="false">14 days</button>
+                <button type="button" role="radio" data-spend-days="30" aria-checked="true">30 days</button>
+                <button type="button" role="radio" data-spend-days="90" aria-checked="false">90 days</button>
+              </div>
+            </div>
+          </div>
+          <div class="spend-stats" id="spend-stats"></div>
+          <div class="spend-body">
+            <ul class="spend-legend" id="spend-legend" aria-label="Legend"></ul>
+            <div class="chart spend-chart" id="spend-chart"></div>
+            <div id="spend-table"></div>
+          </div>
+        </section>
+        <section class="panel" id="panel-calls" aria-labelledby="calls-heading">
+          <div class="panel-head">
+            <h2 id="calls-heading">Calls <button type="button" class="info" data-info="calls" aria-label="About the call log">i</button></h2>
+            <div class="filters" role="group" aria-label="Filter calls">
+              <button type="button" class="chip is-active" data-call-filter="">All</button>
+              <button type="button" class="chip" data-call-filter="diagnosis">Diagnoses</button>
+              <button type="button" class="chip" data-call-filter="briefing">Briefing</button>
+              <button type="button" class="chip" data-call-filter="classifier">Classifier</button>
+            </div>
+            <div class="panel-tools">
+              <div class="segmented icon-switch" role="radiogroup" aria-label="Call log layout">
+                <button type="button" role="radio" data-density="calls" data-mode="full" aria-checked="true"
+                        aria-label="Detailed rows" title="Detailed rows"><svg class="icon"><use href="#i-rows"/></svg></button>
+                <button type="button" role="radio" data-density="calls" data-mode="compact" aria-checked="false"
+                        aria-label="Compact rows" title="Compact rows"><svg class="icon"><use href="#i-compact"/></svg></button>
+              </div>
+            </div>
+          </div>
+          <div class="audit-head" aria-hidden="true">
+            <span>When</span><span>Purpose</span><span>Model</span><span>Outcome</span>
+          </div>
+          <ol class="audit" id="llm-calls"></ol>
+          <div id="llm-calls-more"></div>
+        </section>
+        <section class="panel" id="panel-classifier" aria-labelledby="classifier-heading">
+          <div class="panel-head">
+            <h2 id="classifier-heading">Classifier <button type="button" class="info" data-info="classifier" aria-label="About the classifier">i</button></h2>
+            <p class="panel-sub" id="classifier-sub"></p>
+          </div>
+          <div class="spend-stats" id="classifier-stats"></div>
+          <div class="audit-head" aria-hidden="true">
+            <span>When</span><span>Signal</span><span>Verdict</span><span>Action</span>
+          </div>
+          <ol class="audit" id="classifications"></ol>
+        </section>
+      </section>
+
+      <section class="view" data-view="profile" hidden>
+        <section class="panel" id="panel-identity" aria-labelledby="identity-heading">
+          <div class="panel-head">
+            <h2 id="identity-heading">Identity</h2>
+            <p class="panel-sub">As the identity provider describes you, refreshed each time it renews your session.</p>
+          </div>
+          <div class="profile-body" id="profile-identity"></div>
+        </section>
+        <section class="panel" id="panel-sessions" aria-labelledby="sessions-heading">
+          <div class="panel-head">
+            <h2 id="sessions-heading">Sessions</h2>
+            <p class="panel-sub">Everywhere you are signed in. Signing a session out takes effect on its next request.</p>
+            <div class="panel-tools">
+              <button type="button" class="btn btn-small btn-danger" id="sessions-end-others" hidden>Sign out all others</button>
+            </div>
+          </div>
+          <ul class="session-list" id="profile-sessions"></ul>
+        </section>
+        <section class="panel" id="panel-provider" aria-labelledby="provider-heading">
+          <div class="panel-head">
+            <h2 id="provider-heading">Sign-in</h2>
+            <p class="panel-sub">How the doctor signs you in, and what keeps you signed in.</p>
+          </div>
+          <div class="profile-body" id="profile-provider"></div>
+        </section>
+      </section>
+
+      <section class="view" data-view="settings" hidden>
+        <section class="settings-page" id="panel-settings" aria-labelledby="settings-heading">
+          <h2 id="settings-heading" class="visually-hidden">Settings</h2>
+          <header class="settings-header">
+            <div class="settings-actions">
+              <div class="settings-search-wrap" id="settings-search-wrap">
+                <input type="search" id="settings-search" class="search settings-search" tabindex="-1"
+                  placeholder="Search settings and variables" aria-label="Find a setting" autocomplete="off">
+                <button type="button" class="icon-btn" id="settings-search-open" aria-expanded="false"
+                  aria-controls="settings-search" title="Search settings" aria-label="Search settings">
+                  <svg class="icon" aria-hidden="true"><use href="#i-search"/></svg></button>
+              </div>
+              <div class="settings-filter">
+                <button type="button" class="icon-btn" id="settings-filter-open" aria-expanded="false"
+                  aria-haspopup="true" aria-controls="settings-filter-menu" title="Filter and view" aria-label="Filter and view">
+                  <svg class="icon" aria-hidden="true"><use href="#i-filter"/></svg></button>
+                <div class="settings-filter-menu" id="settings-filter-menu" role="group" aria-label="Filter and view" hidden>
+                  <button type="button" class="settings-toggle" id="settings-changed" aria-pressed="false"
+                    title="Only the settings that differ from the compose file's defaults">Changed only</button>
+                  <button type="button" class="settings-toggle" id="settings-details" aria-pressed="false"
+                    title="Each setting's stack variable and default">Show variables</button>
+                </div>
+              </div>
+              <span class="settings-legend" id="settings-legend"></span>
+              <input type="file" id="settings-import-file" accept="application/json,.json" hidden>
+            </div>
+          </header>
+          <div class="settings-pending" id="settings-pending" role="status" hidden>
+            <span>Some saved changes take effect only when the doctor restarts.</span>
+            <button type="button" class="btn btn-small btn-primary" id="settings-restart">Restart to apply</button>
+          </div>
+          <div class="settings-layout">
+            <nav class="settings-nav" aria-label="Settings sections">
+              <div class="settings-tabs" id="settings-tabs" role="tablist" aria-label="Settings sections"
+                aria-orientation="vertical"></div>
+            </nav>
+            <div class="settings-main">
+              <div id="settings" class="settings-grid"></div>
+              <details class="settings-history" id="settings-history" hidden>
+                <summary id="settings-history-summary">Changes made here</summary>
+                <ol class="settings-history-list" id="settings-history-list"></ol>
+              </details>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <!-- Phones: the four places you go most, and the rest behind More. -->
+  <nav class="tabbar" aria-label="Sections">
+    <a class="tab" href="#/overview" data-nav="overview"><svg><use href="#i-overview"/></svg><span>Overview</span></a>
+    <a class="tab" href="#/incidents" data-nav="incidents"><svg><use href="#i-incidents"/></svg><span>Incidents</span><b class="nav-badge" data-badge="incidents" hidden></b></a>
+    <a class="tab" href="#/containers" data-nav="containers"><svg><use href="#i-containers"/></svg><span>Containers</span><b class="nav-badge" data-badge="containers" hidden></b></a>
+    <a class="tab" href="#/storage" data-nav="storage"><svg><use href="#i-storage"/></svg><span>Storage</span><b class="nav-badge" data-badge="storage" hidden></b></a>
+    <button type="button" class="tab" id="tab-more" aria-haspopup="true" aria-expanded="false" data-nav="more">
+      <svg><use href="#i-more"/></svg><span>More</span><b class="nav-badge" data-badge="more" hidden></b>
+    </button>
+    <div class="tab-menu" id="tab-menu" role="menu" hidden>
+      <a role="menuitem" href="#/host" data-nav="host"><svg><use href="#i-host"/></svg>Host<b class="nav-badge" data-badge="host" hidden></b></a>
+      <a role="menuitem" href="#/network" data-nav="network"><svg><use href="#i-network"/></svg>Network<b class="nav-badge" data-badge="network" hidden></b></a>
+      <a role="menuitem" href="#/updates" data-nav="updates"><svg><use href="#i-updates"/></svg>Updates<b class="nav-badge" data-badge="updates" hidden></b></a>
+      <a role="menuitem" href="#/activity" data-nav="activity"><svg><use href="#i-activity"/></svg>Activity</a>
+      <a role="menuitem" href="#/llm" data-nav="llm"><svg><use href="#i-spark"/></svg>LLM</a>
+      <a role="menuitem" href="#/settings" data-nav="settings"><svg><use href="#i-settings"/></svg>Settings</a>
+    </div>
+  </nav>
+</div>
+
+<dialog id="detail" class="detail" aria-labelledby="detail-title">
+  <div id="detail-body" class="detail-body"></div>
+</dialog>
+
+<dialog id="handoff" class="detail handoff-dialog" aria-labelledby="handoff-title">
+  <div class="detail-body">
+    <header class="detail-head">
+      <div class="detail-title">
+        <h2 id="handoff-title">For your LLM agent</h2>
+        <p class="muted">The clipboard was not available here. It is selected - copy it by hand.</p>
+      </div>
+      <button type="button" class="detail-close" data-close-handoff aria-label="Close">&times;</button>
+    </header>
+    <textarea id="handoff-text" class="handoff-text" readonly spellcheck="false"></textarea>
+    <div class="detail-actions"><a id="handoff-download" class="btn" download>Download .md</a></div>
+  </div>
+</dialog>
+
+<dialog id="drive" class="detail" aria-labelledby="drive-title">
+  <div id="drive-body" class="detail-body"></div>
+</dialog>
+
+<dialog id="llm-call" class="detail" aria-labelledby="llm-call-title">
+  <div id="llm-call-body" class="detail-body"></div>
+</dialog>
+
+<div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
