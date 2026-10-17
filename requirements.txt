@@ -8,5 +8,5 @@ httpx==0.28.1
 PyYAML==6.0.3
 # OIDC sign-in: Authlib does discovery, JWKS and token validation; itsdangerous
 # signs the session cookie Starlette's SessionMiddleware sets.
-Authlib==1.8.0
+Authlib==1.9.1
 itsdangerous==2.2.0
