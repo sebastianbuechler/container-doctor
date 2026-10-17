@@ -1,4 +1,6 @@
 tests/
+demo/
+docs/
 README.md
 .env
 .env.example

@@ -10,6 +10,10 @@ hero:
     - text: Quick start
       link: /container-doctor/getting-started/quick-start/
       icon: right-arrow
+    - text: Try the live demo
+      link: /container-doctor/getting-started/live-demo/
+      icon: laptop
+      variant: secondary
     - text: How it works
       link: /container-doctor/concepts/how-it-works/
       variant: minimal
@@ -20,6 +24,9 @@ hero:
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import Screenshot from '../../components/Screenshot.astro';
+
+<Screenshot name="overview" alt="The Container Doctor overview: a briefing that says paperless is down until a database restart is approved, three priorities, and a card each for incidents, containers, storage and updates." />
 
 <CardGrid stagger>
   <Card title="Rules decide, a model explains" icon="seti:config">

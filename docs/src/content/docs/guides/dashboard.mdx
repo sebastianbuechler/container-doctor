@@ -3,6 +3,8 @@ title: "The dashboard"
 description: "A tour of the dashboard: the briefing, incidents, containers, and finding your way around."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 `https://doctor.example.com` — HTTP Basic auth, live-updating over SSE.
 
 - **Overview** — the briefing, then the tiles: current mode, open incidents,
@@ -42,6 +44,8 @@ glance. Compact containers show state, name, image, CPU, memory and restarts;
 storage drops the charts; updates drop the release-note warnings; the action
 log keeps each reason as the row's tooltip. An incident still opens in full
 from its compact row. The choice is remembered per list, in this browser.
+
+<Screenshot name="overview" alt="The overview: the briefing on top, then a card per section." />
 
 ## The briefing
 
@@ -192,3 +196,6 @@ app** in Chrome. It opens full-screen with its own icon, and a notification link
 opens straight into it. There is no service worker and no offline copy: a
 monitoring page that shows cached state when it cannot reach the doctor would
 be worse than one that says it cannot.
+
+<Screenshot name="phone" phone alt="The overview on a phone, with the tab bar at the bottom." />
+

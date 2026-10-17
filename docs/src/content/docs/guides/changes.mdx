@@ -3,6 +3,8 @@ title: "What changed"
 description: "Recreations, renames, restarts and configuration changes, container by container."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 Every poll is compared against the last one, and what changed is written down:
 
 - **Recreated**, by a redeploy. A recreate names the image it came up on: a new
@@ -49,3 +51,5 @@ earlier image to roll back to. Configuration differences are listed under the
 change they came with; when image and configuration were both compared and
 neither moved, the prompt says what that leaves: the workload, its data, or
 something outside the container. The briefing mentions the last day's recreates.
+
+<Screenshot name="activity" alt="Activity: every decision, including the ones not taken, and what changed on each container." />

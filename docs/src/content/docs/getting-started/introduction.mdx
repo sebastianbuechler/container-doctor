@@ -3,6 +3,8 @@ title: "Introduction"
 description: "What Container Doctor is, what it does on its own, and what it never does without you."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 import { Image } from 'astro:assets';
 import { CardGrid, LinkCard } from '@astrojs/starlight/components';
 import light from '../../../assets/how-it-works-light.svg';
@@ -28,6 +30,8 @@ it reads Docker and Compose's own labels, whatever started the containers.
 Docker itself is reached only through a socket proxy that lets the doctor
 restart a container but never create one - `POST /containers/create` accepts
 arbitrary host bind mounts, so an open create endpoint is a container escape.
+
+<Screenshot name="incident" alt="An incident opened by the rules, with the model's diagnosis, its evidence and fix steps, and a proposed restart waiting for approval." />
 
 ## What you get
 

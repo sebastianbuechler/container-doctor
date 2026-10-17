@@ -3,6 +3,8 @@ title: "Settings"
 description: "Where each value comes from, changing settings on the page, export and import."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 Every setting can be set in two places: the stack environment (a `.env` file
 next to the compose file, or your Docker manager's environment editor), and
 the dashboard's **Settings** page.
@@ -10,6 +12,8 @@ Use the stack environment for secrets, sign-in and anything
 you want pinned; use the page for the rest - thresholds, mode, the model,
 budgets, the classifier, notifications - where a change is checked before it
 is saved and usually takes effect at once.
+
+<Screenshot name="settings" alt="The Settings page: every setting, where its value comes from, and what can be changed here." />
 
 ## Where a value comes from
 

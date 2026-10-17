@@ -3,6 +3,8 @@ title: "Models and cost"
 description: "Anthropic or any OpenAI-compatible model, what is sent, what it costs, and free and local options."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 The **LLM** page answers two questions: what did the doctor send, and what did
 it cost.
 
@@ -28,6 +30,8 @@ request on the clipboard.
 
 The bodies are kept for `DOCTOR_LLM_LOG_DAYS` (default 14; `0` keeps none). A
 failure to write the log is itself logged and never costs the call.
+
+<Screenshot name="llm" alt="The LLM page: spend per day, and every request sent to a model with its answer." />
 
 ## Cost and model choice
 

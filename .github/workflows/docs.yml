@@ -2,7 +2,8 @@ name: Docs
 
 # Builds the documentation site (docs/, Astro Starlight) on every pull request
 # that touches it - the build fails on a broken internal link - and publishes it
-# to GitHub Pages from main.
+# to GitHub Pages from main. The site carries the dashboard itself as a demo
+# (docs/scripts/build-demo.mjs), so a change to app/web/static rebuilds it too.
 #
 # The generated environment variable reference is checked by the tests
 # (tests/test_docs.py), so a setting changed without regenerating it fails
@@ -11,11 +12,13 @@ on:
   pull_request:
     paths:
       - 'docs/**'
+      - 'app/web/static/**'
       - '.github/workflows/docs.yml'
   push:
     branches: [main]
     paths:
       - 'docs/**'
+      - 'app/web/static/**'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 

@@ -3,6 +3,8 @@ title: "Network"
 description: "The network map, its wiring checks, and internet and DNS from the host."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 **Network** shows every Docker network, who is on it and at what address, and
 what the host publishes. Membership, addresses and ports come from the
 container inspect the poll already does. Driver, the *internal* flag, subnets
@@ -31,6 +33,8 @@ It also notes wiring mistakes. None opens an incident:
 | Two networks' subnets overlap | Traffic goes to whichever Docker set up last |
 | Nobody is on a network | Left over from a removed stack, or one that is down |
 | A network is `macvlan` / `ipvlan` | Its containers are on the LAN, and the host itself cannot reach them without a shim |
+
+<Screenshot name="network" alt="The Network page: which containers share a network, what the host publishes, and the internet and DNS checks." />
 
 ## Internet and DNS
 
