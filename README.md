@@ -53,3 +53,7 @@ security.
 pip install -r requirements.txt
 python -m unittest discover -s tests
 ```
+
+Every push to `main` publishes the image as `edge`. A release is cut by the
+**Release** workflow (Actions → Release → Run workflow, with `X.Y.Z`): it tags
+`main`, publishes `X.Y.Z`, `X.Y` and `latest`, then the GitHub release.

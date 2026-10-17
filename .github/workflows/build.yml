@@ -1,0 +1,71 @@
+name: Build image
+
+# The image build, in one place: image.yml calls it for pushes, release.yml
+# for releases. Publishes ghcr.io/<owner>/container-doctor for amd64 and arm64.
+#
+#   main                -> edge, sha-<commit>
+#   a release (version) -> X.Y.Z, X.Y, latest, sha-<commit>
+#
+# `latest` moves only with a release, so a deployment tracking it gets
+# releases, not every merge. Pin `X.Y.Z@sha256:...` to choose when to move.
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The release, X.Y.Z. Empty for a build of main - or of a pushed vX.Y.Z tag, read from the ref.
+        type: string
+        default: ""
+    outputs:
+      digest:
+        description: The pushed image's digest
+        value: ${{ jobs.publish.outputs.digest }}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      # The commit the run started from: a release tags exactly that one, and
+      # main may have moved on while the tag job ran.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/container-doctor
+          tags: |
+            type=semver,pattern={{version}},value=${{ inputs.version }}
+            type=semver,pattern={{major}}.{{minor}},value=${{ inputs.version }}
+            type=raw,value=latest,enable=${{ inputs.version != '' || startsWith(github.ref, 'refs/tags/v') }}
+            type=edge,branch=main
+            type=sha,format=long
+
+      - id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          build-args: |
+            DOCTOR_BUILD=${{ github.sha }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
