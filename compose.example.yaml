@@ -1,12 +1,14 @@
 # Container Doctor - a reference compose file.
 #
 # The doctor, its socket proxy (the only way it reaches Docker, and what keeps
-# it from creating containers) and an optional SMART sidecar for drive health.
+# it from creating containers) and an opt-in SMART sidecar for drive health.
 # Copy it, set the variables you need in a .env file next to it or in your
 # Docker manager's stack environment (see .env.example), and start it:
 #
 #   mkdir -p data && sudo chown 1000:1000 data
 #   docker compose -f compose.example.yaml up -d
+#
+# Add `--profile smart` to also start the SMART sidecar.
 #
 # Every setting is passed through as `- X=${X:-}`: empty means unset and the
 # code's default applies, and the Settings page can tell which settings this
@@ -79,6 +81,11 @@ services:
     # The sataN drives are read as SATA (`;sat`): left to guess, smartctl
     # takes a drive whose model has a space in it - every "WDC WD..." - for
     # a SCSI disk and reads no SMART from it at all, only its identity.
+    # Opt-in: it has raw access to the disks and CAP_SYS_ADMIN, so it starts
+    # only with `docker compose --profile smart up -d` (or COMPOSE_PROFILES=smart
+    # in the stack environment). The doctor runs without it; the drive health
+    # panel then says it is not running.
+    profiles: ["smart"]
     image: prometheuscommunity/smartctl-exporter:v0.15.0@sha256:a76e08dbf5db4781fefd1ed81c65ad46ae8d2849dae6b6d3acebcde2fc4e59d6
     container_name: container-doctor-smart
     # smartctl opens a drive read-write to send it SMART commands, which needs
@@ -165,10 +172,14 @@ services:
       - DOCTOR_AUTO_ACTIONS=${DOCTOR_AUTO_ACTIONS:-}
       - DOCTOR_MIN_CONFIDENCE=${DOCTOR_MIN_CONFIDENCE:-}
       - DOCTOR_IGNORE_CONTAINERS=${DOCTOR_IGNORE_CONTAINERS:-}
+      # true watches only containers labelled doctor.enable=true.
+      - DOCTOR_REQUIRE_OPT_IN=${DOCTOR_REQUIRE_OPT_IN:-}
+      - DOCTOR_SELF_NAME=${DOCTOR_SELF_NAME:-}
       - DOCTOR_LLM_PROVIDER=${DOCTOR_LLM_PROVIDER:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DOCTOR_MODEL=${DOCTOR_MODEL:-}
       - DOCTOR_EFFORT=${DOCTOR_EFFORT:-}
+      - DOCTOR_MAX_OUTPUT_TOKENS=${DOCTOR_MAX_OUTPUT_TOKENS:-}
       - DOCTOR_DAILY_USD_BUDGET=${DOCTOR_DAILY_USD_BUDGET:-}
       - DOCTOR_DAILY_CALL_LIMIT=${DOCTOR_DAILY_CALL_LIMIT:-}
       # USD per million tokens; -1 uses the built-in Anthropic table.
@@ -193,6 +204,7 @@ services:
       - DOCTOR_RESTART_LOOP_COUNT=${DOCTOR_RESTART_LOOP_COUNT:-}
       - DOCTOR_RESTART_LOOP_WINDOW_MINUTES=${DOCTOR_RESTART_LOOP_WINDOW_MINUTES:-}
       - DOCTOR_LOG_LINES=${DOCTOR_LOG_LINES:-}
+      - DOCTOR_LOG_ERROR_PATTERN=${DOCTOR_LOG_ERROR_PATTERN:-}
       - DOCTOR_LOG_ERROR_BURST=${DOCTOR_LOG_ERROR_BURST:-}
       - DOCTOR_LOG_LEVEL_ERROR_BURST=${DOCTOR_LOG_LEVEL_ERROR_BURST:-}
       - DOCTOR_LOG_FATAL_THRESHOLD=${DOCTOR_LOG_FATAL_THRESHOLD:-}
@@ -209,11 +221,15 @@ services:
       - DOCTOR_DISK_THRESHOLD=${DOCTOR_DISK_THRESHOLD:-}
       - DOCTOR_DISK_CRITICAL=${DOCTOR_DISK_CRITICAL:-}
       - DOCTOR_DISK_FORECAST_DAYS=${DOCTOR_DISK_FORECAST_DAYS:-}
+      - DOCTOR_DISK_FORECAST_CRITICAL_DAYS=${DOCTOR_DISK_FORECAST_CRITICAL_DAYS:-}
       - DOCTOR_DISK_TREND_WINDOW_DAYS=${DOCTOR_DISK_TREND_WINDOW_DAYS:-}
+      - DOCTOR_DISK_SAMPLE_MINUTES=${DOCTOR_DISK_SAMPLE_MINUTES:-}
       - DOCTOR_MDSTAT_PATH=${DOCTOR_MDSTAT_PATH:-}
       # Which arrays make up each volume, scrub results and per-disk read
       # errors. Docker mounts the host's /sys read-only already.
       - DOCTOR_SYSFS_PATH=${DOCTOR_SYSFS_PATH:-}
+      - DOCTOR_RAID_ERRORS_PER_DAY=${DOCTOR_RAID_ERRORS_PER_DAY:-}
+      - DOCTOR_RAID_ERRORS_DAYS=${DOCTOR_RAID_ERRORS_DAYS:-}
       # Drive health from the doctor-smart sidecar above. off turns it off.
       - DOCTOR_SMART_URL=${DOCTOR_SMART_URL:-}
       - DOCTOR_SMART_TEMP_C=${DOCTOR_SMART_TEMP_C:-}
@@ -228,10 +244,12 @@ services:
       - DOCTOR_HOST_IOWAIT_PCT=${DOCTOR_HOST_IOWAIT_PCT:-}
       - DOCTOR_HOST_TEMP_C=${DOCTOR_HOST_TEMP_C:-}
       - DOCTOR_HOST_BREACH_POLLS=${DOCTOR_HOST_BREACH_POLLS:-}
+      - DOCTOR_HOST_SAMPLE_MINUTES=${DOCTOR_HOST_SAMPLE_MINUTES:-}
       # Internet and DNS, checked from this container. 0 turns them off;
       # "none" empties a list. DNS servers on your network (Pi-hole, the
       # router) are worth listing: each is then checked on its own.
       - DOCTOR_NET_CHECK_SECONDS=${DOCTOR_NET_CHECK_SECONDS:-}
+      - DOCTOR_NET_TIMEOUT=${DOCTOR_NET_TIMEOUT:-}
       - DOCTOR_NET_FAIL_ROUNDS=${DOCTOR_NET_FAIL_ROUNDS:-}
       - DOCTOR_NET_TCP_TARGETS=${DOCTOR_NET_TCP_TARGETS:-}
       - DOCTOR_NET_DNS_NAMES=${DOCTOR_NET_DNS_NAMES:-}
@@ -267,6 +285,7 @@ services:
       - DOCTOR_CLASSIFIER=${DOCTOR_CLASSIFIER:-}
       - DOCTOR_CLASSIFIER_PROVIDER=${DOCTOR_CLASSIFIER_PROVIDER:-}
       - DOCTOR_CLASSIFIER_MODEL=${DOCTOR_CLASSIFIER_MODEL:-}
+      - DOCTOR_CLASSIFIER_URL=${DOCTOR_CLASSIFIER_URL:-}
       # An OpenRouter key; give it a credit limit of its own on openrouter.ai.
       # Unset: the diagnosis's DOCTOR_OPENAI_API_KEY, if that is an OpenRouter one.
       - DOCTOR_CLASSIFIER_API_KEY=${DOCTOR_CLASSIFIER_API_KEY:-}
@@ -276,16 +295,25 @@ services:
       - DOCTOR_CLASSIFIER_MAX_PER_MINUTE=${DOCTOR_CLASSIFIER_MAX_PER_MINUTE:-}
       - DOCTOR_CLASSIFIER_CACHE_HOURS=${DOCTOR_CLASSIFIER_CACHE_HOURS:-}
       - DOCTOR_CLASSIFIER_TIMEOUT=${DOCTOR_CLASSIFIER_TIMEOUT:-}
+      - DOCTOR_CLASSIFIER_MAX_STATE_CHARS=${DOCTOR_CLASSIFIER_MAX_STATE_CHARS:-}
+      - DOCTOR_CLASSIFIER_PRICE_PER_MTOK=${DOCTOR_CLASSIFIER_PRICE_PER_MTOK:-}
+      # Notifications are off until a URL and a topic are set. On ntfy.sh a
+      # topic is readable by anyone who guesses it: make it long and random,
+      # or use a token or your own server.
       - DOCTOR_NTFY_URL=${DOCTOR_NTFY_URL:-}
       - DOCTOR_NTFY_TOPIC=${DOCTOR_NTFY_TOPIC:-}
       - DOCTOR_NTFY_TOKEN=${DOCTOR_NTFY_TOKEN:-}
-      # Sign-in. With OIDC configured the password is refused unless the
-      # fallback is switched on, so there is one way in by default.
+      # Sign-in, environment-only like every address a secret is sent to.
+      # With OIDC configured the password is refused unless the fallback is
+      # switched on, so there is one way in by default. With neither a
+      # password nor OIDC, the dashboard refuses every request.
       - DOCTOR_OIDC_ISSUER=${DOCTOR_OIDC_ISSUER:-}
       - DOCTOR_OIDC_CLIENT_ID=${DOCTOR_OIDC_CLIENT_ID:-}
       - DOCTOR_OIDC_CLIENT_SECRET=${DOCTOR_OIDC_CLIENT_SECRET:-}
       - DOCTOR_PUBLIC_URL=${DOCTOR_PUBLIC_URL:-}
       - DOCTOR_OIDC_ALLOWED_GROUPS=${DOCTOR_OIDC_ALLOWED_GROUPS:-}
+      - DOCTOR_OIDC_GROUPS_CLAIM=${DOCTOR_OIDC_GROUPS_CLAIM:-}
+      - DOCTOR_OIDC_SCOPES=${DOCTOR_OIDC_SCOPES:-}
       - DOCTOR_SESSION_SECRET=${DOCTOR_SESSION_SECRET:-}
       - DOCTOR_SESSION_HOURS=${DOCTOR_SESSION_HOURS:-}
       - DOCTOR_WEB_PASSWORD_FALLBACK=${DOCTOR_WEB_PASSWORD_FALLBACK:-}
@@ -302,6 +330,8 @@ services:
     user: "${DOCTOR_UID:-1000}:${DOCTOR_GID:-1000}"
     # The dashboard. Put a reverse proxy with TLS in front of it before
     # exposing it beyond your LAN, and set DOCTOR_PUBLIC_URL to its address.
+    # With that proxy on the same host, "127.0.0.1:${DOCTOR_PORT:-8080}:8080"
+    # keeps the port off the network so only the proxy reaches it.
     ports:
       - "${DOCTOR_PORT:-8080}:8080"
     restart: unless-stopped

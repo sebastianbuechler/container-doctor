@@ -46,6 +46,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # The release this build is for: the input, else a pushed vX.Y.Z tag.
+      - id: version
+        env:
+          INPUT: ${{ inputs.version }}
+          REF: ${{ github.ref }}
+        run: |
+          version="$INPUT"
+          if [ -z "$version" ] && [[ "$REF" == refs/tags/v* ]]; then
+            version="${REF#refs/tags/v}"
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
       - id: meta
         uses: docker/metadata-action@v6
         with:
@@ -63,6 +75,7 @@ jobs:
           context: .
           build-args: |
             DOCTOR_BUILD=${{ github.sha }}
+            DOCTOR_VERSION=${{ steps.version.outputs.version }}
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}

@@ -1,4 +1,4 @@
-"""Naming the device a session was signed in from: "Sebastian's Pixel 8 Pro".
+"""Naming the device a session was signed in from: "Alex's Pixel 8 Pro".
 
 Browsers do not reveal the name someone gave their device. The closest thing
 is the model, which Chromium browsers report through User-Agent Client Hints

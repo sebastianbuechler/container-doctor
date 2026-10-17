@@ -41,10 +41,11 @@ from cryptography.fernet import Fernet, InvalidToken
 from ..config import Settings
 from . import devices
 
-# Whichever HTTP library Authlib settled on: httpx2 when installed, httpx
-# otherwise. Catching plain httpx misses the former's errors.
+# Whichever HTTP library Authlib settles on: httpx2 when installed, httpx
+# otherwise - the same choice Authlib makes. Catching plain httpx misses the
+# former's errors.
 try:
-    from authlib.integrations.httpx_client._compat import httpx2 as oauth_http
+    import httpx2 as oauth_http
 except ImportError:  # an Authlib from before httpx2
     import httpx as oauth_http
 

@@ -2587,6 +2587,7 @@ class Supervisor:
         return {
             "mode": self.settings.mode,
             "build": self.settings.build,
+            "version": self.settings.version,
             "model": self.settings.model,
             "provider": self.settings.llm_provider,
             "llm_enabled": self.diagnoser.enabled,

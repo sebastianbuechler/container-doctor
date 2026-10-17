@@ -39,7 +39,8 @@ def overview_rows(**overrides) -> set[tuple[str, str]]:
 class TheMapping(unittest.TestCase):
     def test_every_row_but_the_build_names_its_variables(self):
         rows = overview_rows(github_token="x")
-        self.assertEqual(sorted(rows - set(ENV_FOR)), [("Build and mode", "Build")])
+        self.assertEqual(sorted(rows - set(ENV_FOR)),
+                         [("Build and mode", "Build"), ("Build and mode", "Version")])
 
     def test_no_entry_for_a_row_that_does_not_exist(self):
         self.assertEqual([key for key in ENV_FOR if key not in overview_rows(github_token="x")], [])

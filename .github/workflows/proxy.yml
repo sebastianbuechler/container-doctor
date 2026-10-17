@@ -25,9 +25,11 @@ jobs:
         with:
           python-version: ${{ steps.python.outputs.version }}
           cache: pip
-          cache-dependency-path: requirements.txt
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
       - name: Install dependencies
-        run: python -m pip install -r requirements.txt
+        run: python -m pip install -r requirements-dev.txt
       - name: Validate Compose configuration
         run: docker compose -f compose.example.yaml config --quiet
       # Starts the real proxy image with compose.example.yaml's settings and

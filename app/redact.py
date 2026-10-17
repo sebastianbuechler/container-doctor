@@ -31,7 +31,8 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # JWTs
     (re.compile(r"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b"), REDACTED),
     # Credentials embedded in URLs
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^/\s@]+)@"), rf"\g<1>\g<2>:{REDACTED}@"),
+    # (the user may be empty: redis://:password@host)
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]*):([^/\s@]+)@"), rf"\g<1>\g<2>:{REDACTED}@"),
     # Common vendor key shapes
     (re.compile(r"\bsk-ant-[A-Za-z0-9_-]{10,}\b"), REDACTED),
     (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), REDACTED),

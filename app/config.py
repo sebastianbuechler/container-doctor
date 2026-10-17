@@ -13,7 +13,8 @@ import os
 import re
 from dataclasses import dataclass, field, fields
 from enum import StrEnum
-from typing import Any
+from types import MappingProxyType
+from typing import Any, Mapping
 
 # A setting with a closed set of values is an enum, and the enum is the one
 # list of them: validation reads it, and so does the Settings page, which shows
@@ -95,7 +96,8 @@ DEFAULT_AUTO_ACTIONS: tuple[str, ...] = ("restart_container",)
 
 # Values saved from the Settings page, while Settings.resolve() builds one:
 # read where the environment has nothing for a setting.
-_SAVED: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar("saved", default={})
+_SAVED: contextvars.ContextVar[Mapping[str, str]] = contextvars.ContextVar(
+    "saved", default=MappingProxyType({}))
 
 
 def _env(name: str, default: str = "") -> str:
@@ -150,6 +152,23 @@ def _env_list(name: str, default: tuple[str, ...] = ()) -> list[str]:
     if not raw:
         return list(default)
     return [item.strip() for item in raw.split(",") if item.strip()]
+
+
+# Passwords nobody chose: what an example file says, or a guess. One of these
+# is no sign-in at all, so it is treated as unset.
+PLACEHOLDER_PASSWORDS = frozenset({
+    "change-me", "changeme", "change_me", "password", "admin", "doctor", "secret", "123456",
+})
+SHORT_PASSWORD = 12
+
+
+def _placeholder_password(value: str) -> bool:
+    return (value.strip().lower() in PLACEHOLDER_PASSWORDS
+            or value == _env("DOCTOR_WEB_USER", "doctor"))
+
+
+def _refuse_placeholder(value: str) -> str:
+    return "" if _placeholder_password(value) else value
 
 
 def _validate_mode(value: str) -> Mode:
@@ -229,7 +248,7 @@ def setting(env: str, default: Any, *, choices: type[StrEnum] | None = None,
 
 @dataclass(frozen=True)
 class Settings:
-    docker_host: str = setting("DOCKER_HOST", "tcp://doctor-socket-proxy:2375", restart=True)
+    docker_host: str = setting("DOCKER_HOST", "tcp://doctor-socket-proxy:2375", env_only=True)
 
     mode: Mode = setting("DOCTOR_MODE", "observe", choices=Mode, convert=_validate_mode)
     require_opt_in: bool = setting("DOCTOR_REQUIRE_OPT_IN", False)
@@ -250,8 +269,8 @@ class Settings:
     restart_loop_window_minutes: int = setting("DOCTOR_RESTART_LOOP_WINDOW_MINUTES", 15)
     log_lines: int = setting("DOCTOR_LOG_LINES", 120)
     # Ignore log lines older than this. A quiet container's `tail` reaches back
-    # as far as it has been running - Docmost's Postgres was serving FATAL lines
-    # from 2025 to a poll in 2026, which read as a live failure.
+    # as far as it has been running, and a FATAL line from months ago would
+    # otherwise read as a live failure.
     log_max_age_minutes: int = setting("DOCTOR_LOG_MAX_AGE_MINUTES", 60)
     log_error_pattern: str = setting(
         "DOCTOR_LOG_ERROR_PATTERN",
@@ -277,7 +296,6 @@ class Settings:
     # A storage host that is simply well used sits high for years; 90% pestered about a
     # disk with terabytes free.
     disk_threshold_pct: float = setting("DOCTOR_DISK_THRESHOLD", 95.0)
-    # Where the same condition stops being a warning. Was hard-coded at 95.
     # How far back the fill-rate is fitted, and how close to full is worth
     # saying something about. A percentage says how full; these say whether it
     # is going anywhere.
@@ -285,7 +303,8 @@ class Settings:
     disk_forecast_days: int = setting("DOCTOR_DISK_FORECAST_DAYS", 21)
     disk_forecast_critical_days: int = setting("DOCTOR_DISK_FORECAST_CRITICAL_DAYS", 5)
     disk_sample_minutes: int = setting("DOCTOR_DISK_SAMPLE_MINUTES", 60)
-    disk_critical_pct: float = setting("DOCTOR_DISK_CRITICAL", 95.0)
+    # Where the same condition stops being a warning and becomes critical.
+    disk_critical_pct: float = setting("DOCTOR_DISK_CRITICAL", 98.0)
     # How many newly corrected read errors in a day turn a drive's warning
     # critical. The first one is always a warning; this is "and it is getting
     # worse". md itself fails a member at 20 corrected errors that come
@@ -305,11 +324,13 @@ class Settings:
 
     llm_provider: str = setting("DOCTOR_LLM_PROVIDER", "anthropic", choices=LLMProvider, restart=True)
     anthropic_api_key: str = setting("ANTHROPIC_API_KEY", "", secret=True)
-    model: str = setting("DOCTOR_MODEL", "claude-opus-5")
+    model: str = setting("DOCTOR_MODEL", "claude-opus-5-5")
     effort: str = setting("DOCTOR_EFFORT", "medium", choices=Effort)
     max_output_tokens: int = setting("DOCTOR_MAX_OUTPUT_TOKENS", 4000)
     # OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...).
-    openai_base_url: str = setting("DOCTOR_OPENAI_BASE_URL", "")
+    # Environment-only, like every URL a secret is sent to: a setting saved
+    # from the page could otherwise send the key to a host of its choosing.
+    openai_base_url: str = setting("DOCTOR_OPENAI_BASE_URL", "", env_only=True)
     openai_api_key: str = setting("DOCTOR_OPENAI_API_KEY", "not-needed", secret=True)
     daily_usd_budget: float = setting("DOCTOR_DAILY_USD_BUDGET", 1.0)
     # The cap that matters on a free tier, which meters requests not dollars.
@@ -331,42 +352,46 @@ class Settings:
     # rejects it outright); the request path also drops it if a vendor objects.
     llm_temperature: float = setting("DOCTOR_LLM_TEMPERATURE", 0.2)
 
-    ntfy_url: str = setting("DOCTOR_NTFY_URL", "")
-    ntfy_topic: str = setting("DOCTOR_NTFY_TOPIC", "container-doctor")
+    ntfy_url: str = setting("DOCTOR_NTFY_URL", "", env_only=True)
+    # No default: a topic on a public server is readable by anyone who guesses
+    # its name, so it has to be chosen - long and random on ntfy.sh.
+    ntfy_topic: str = setting("DOCTOR_NTFY_TOPIC", "")
     ntfy_token: str = setting("DOCTOR_NTFY_TOKEN", "", secret=True)
-    ntfy_priority: str = setting("DOCTOR_NTFY_PRIORITY", "default")
 
     web_host: str = setting("DOCTOR_WEB_HOST", "0.0.0.0", env_only=True)
     web_port: int = setting("DOCTOR_WEB_PORT", 8080, env_only=True)
     # --- OIDC ---------------------------------------------------------------
+    # Sign-in is environment-only throughout: whoever can save a setting must
+    # not be able to decide who signs in, or where.
     # Issuer base URL, e.g. https://id.example.com. Empty disables OIDC.
-    oidc_issuer: str = setting("DOCTOR_OIDC_ISSUER", "", restart=True, convert=lambda v: v.rstrip("/"))
-    oidc_client_id: str = setting("DOCTOR_OIDC_CLIENT_ID", "", restart=True)
+    oidc_issuer: str = setting("DOCTOR_OIDC_ISSUER", "", env_only=True, convert=lambda v: v.rstrip("/"))
+    oidc_client_id: str = setting("DOCTOR_OIDC_CLIENT_ID", "", env_only=True)
     oidc_client_secret: str = setting("DOCTOR_OIDC_CLIENT_SECRET", "", secret=True)
     # The doctor's own public base URL; the redirect URI is derived from it and
     # must match what the provider has registered exactly.
-    public_url: str = setting("DOCTOR_PUBLIC_URL", "", restart=True, convert=lambda v: v.rstrip("/"))
-    oidc_scopes: str = setting("DOCTOR_OIDC_SCOPES", "openid profile email groups", restart=True)
-    oidc_groups_claim: str = setting("DOCTOR_OIDC_GROUPS_CLAIM", "groups", restart=True)
+    public_url: str = setting("DOCTOR_PUBLIC_URL", "", env_only=True, convert=lambda v: v.rstrip("/"))
+    oidc_scopes: str = setting("DOCTOR_OIDC_SCOPES", "openid profile email groups", env_only=True)
+    oidc_groups_claim: str = setting("DOCTOR_OIDC_GROUPS_CLAIM", "groups", env_only=True)
     # Empty means any account the provider authenticates.
-    oidc_allowed_groups: list[str] = setting("DOCTOR_OIDC_ALLOWED_GROUPS", (), restart=True)
+    oidc_allowed_groups: list[str] = setting("DOCTOR_OIDC_ALLOWED_GROUPS", (), env_only=True)
     # Signs the session cookie. Unset means a random one per start, which logs
     # everyone out on restart.
     session_secret: str = setting("DOCTOR_SESSION_SECRET", "", secret=True)
     # How long a session survives unused. In use, it lasts as long as the
     # provider keeps renewing its tokens.
-    session_max_age_seconds: int = setting("DOCTOR_SESSION_HOURS", 12, restart=True,
+    session_max_age_seconds: int = setting("DOCTOR_SESSION_HOURS", 12, env_only=True,
                                            convert=lambda v: v * 3600)
     # Once OIDC is configured the password is refused by default, so there is
     # one way in. Turn this on to keep it as a way back in when the provider
     # itself is the thing that is broken.
-    password_fallback: bool = setting("DOCTOR_WEB_PASSWORD_FALLBACK", False, restart=True)
+    password_fallback: bool = setting("DOCTOR_WEB_PASSWORD_FALLBACK", False, env_only=True)
 
-    web_user: str = setting("DOCTOR_WEB_USER", "doctor", restart=True)
+    web_user: str = setting("DOCTOR_WEB_USER", "doctor", env_only=True)
     # Off makes the Settings page read-only again: nothing can be saved from
     # it, and the stack environment is the only way to change a setting.
     settings_editable: bool = setting("DOCTOR_SETTINGS_EDITABLE", True, env_only=True)
-    web_password: str = setting("DOCTOR_WEB_PASSWORD", "", secret=True)
+    web_password: str = setting("DOCTOR_WEB_PASSWORD", "", secret=True,
+                                convert=_refuse_placeholder)
 
     data_dir: str = setting("DOCTOR_DATA_DIR", "/data", env_only=True)
     # Resolve an incident whose condition has not re-fired for this long. 0 is
@@ -426,7 +451,7 @@ class Settings:
     # Pinned rather than -latest, so verdicts do not drift under you.
     classifier_model: str = setting("DOCTOR_CLASSIFIER_MODEL", "typesafe/jev-1.13")
     classifier_url: str = setting(
-        "DOCTOR_CLASSIFIER_URL", "https://openrouter.ai/api/alpha/decisions")
+        "DOCTOR_CLASSIFIER_URL", "https://openrouter.ai/api/alpha/decisions", env_only=True)
     # Unset falls back to the diagnosis's key when that is an OpenRouter one;
     # see classifier_key.
     classifier_api_key: str = setting("DOCTOR_CLASSIFIER_API_KEY", "", secret=True)
@@ -503,6 +528,8 @@ class Settings:
     llm_log_days: int = setting("DOCTOR_LLM_LOG_DAYS", 14)
     # Stamped into the image by CI. "dev" means a local build.
     build: str = setting("DOCTOR_BUILD", "dev", env_only=True)
+    # The release, X.Y.Z, for an image the Release workflow built; empty otherwise.
+    version: str = setting("DOCTOR_VERSION", "", env_only=True)
     log_level: str = setting("DOCTOR_LOG_LEVEL", "INFO", env_only=True, convert=lambda v: v.upper())
     self_container_name: str = setting("DOCTOR_SELF_NAME", "container-doctor")
 
@@ -586,6 +613,7 @@ class Settings:
                 "title": "Build and mode",
                 "group": "general",
                 "items": [
+                    ("Version", self.version or "unreleased", "the release this image was built for"),
                     ("Build", self.build, "the commit this image was built from"),
                     ("Mode", self.mode, "observe diagnoses only; suggest proposes; auto acts"),
                     ("Poll interval", f"{self.poll_interval_seconds}s", "from the start of one poll to the next"),
@@ -854,10 +882,26 @@ class Settings:
     def validate(self) -> list[str]:
         """Return a list of human-readable configuration warnings."""
         problems: list[str] = []
-        if self.mode != "observe" and not (self.web_password or self.oidc_enabled):
+        raw_password = _env("DOCTOR_WEB_PASSWORD")
+        if raw_password and _placeholder_password(raw_password):
             problems.append(
-                "No sign-in configured: set DOCTOR_OIDC_* or DOCTOR_WEB_PASSWORD, "
-                "or the dashboard stays read-only and approvals are disabled."
+                "DOCTOR_WEB_PASSWORD is a placeholder or the user name, so it is ignored. "
+                "Choose a long random one, e.g. `openssl rand -base64 24`."
+            )
+        elif self.web_password and len(self.web_password) < SHORT_PASSWORD:
+            problems.append(
+                f"DOCTOR_WEB_PASSWORD is shorter than {SHORT_PASSWORD} characters; "
+                "anyone who can reach the dashboard can guess at it."
+            )
+        if not (self.web_password or self.oidc_enabled):
+            problems.append(
+                "No sign-in configured: set DOCTOR_WEB_PASSWORD or DOCTOR_OIDC_*. "
+                "Until then the dashboard and its API refuse every request."
+            )
+        if self.ntfy_url and not self.ntfy_topic:
+            problems.append(
+                "DOCTOR_NTFY_URL is set but DOCTOR_NTFY_TOPIC is not, so nothing is "
+                "sent. On a public server, pick a long random topic."
             )
         if self.oidc_issuer and not self.oidc_enabled:
             missing = [
@@ -872,8 +916,9 @@ class Settings:
             )
         if self.oidc_enabled and not self.session_secret:
             problems.append(
-                "DOCTOR_SESSION_SECRET is unset: a random one is generated per start, "
-                "so every restart signs everyone out."
+                "DOCTOR_SESSION_SECRET is unset: one is generated and kept in the "
+                "data directory. Set it to rotate it, or when the data directory "
+                "is not private."
             )
         for name in BOOLEAN_ENV_VARS:
             raw = _env(name)

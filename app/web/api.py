@@ -17,7 +17,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
-from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,69 @@ _ASSET = re.compile(r'/static/([\w.-]+\.(?:js|css))"')
 
 # How long one look at the identity provider answers the sign-in card's dot.
 PROVIDER_STATUS_SECONDS = 15
+
+# Wrong passwords: this many from one client within the window, and that
+# client is refused outright until the window is over.
+PASSWORD_FAILURES = 10
+PASSWORD_WINDOW_SECONDS = 300
+
+NO_SIGN_IN = "Set DOCTOR_WEB_PASSWORD or configure OIDC to use the dashboard."
+
+# The page loads nothing from elsewhere but the OIDC avatar, which may be on
+# any host; inline styles are set from the script.
+SECURITY_HEADERS = {
+    "Content-Security-Policy": (
+        "default-src 'self'; img-src * data:; style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; "
+        "form-action 'self'; frame-ancestors 'none'"
+    ),
+    "X-Frame-Options": "DENY",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+}
+UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+
+
+def _offline_csp() -> str:
+    """The offline page must stand alone - it is shown exactly when nothing
+    else loads - so its one inline script is allowed by its hash."""
+    import base64
+
+    page = (STATIC_DIR / "offline.html").read_text(encoding="utf-8")
+    scripts = re.findall(r"<script>(.*?)</script>", page, re.S)
+    hashes = " ".join(
+        "'sha256-" + base64.b64encode(hashlib.sha256(body.encode()).digest()).decode() + "'"
+        for body in scripts)
+    return SECURITY_HEADERS["Content-Security-Policy"].replace(
+        "script-src 'self'", f"script-src 'self' {hashes}")
+
+
+def session_secret_for(settings: Settings) -> str:
+    """DOCTOR_SESSION_SECRET, else one generated once and kept in the data
+    directory, so a restart does not sign everyone out. Only when the data
+    directory cannot be written is it random per start."""
+    if settings.session_secret:
+        return settings.session_secret
+    path = Path(settings.data_dir) / "session_secret"
+    try:
+        existing = path.read_text(encoding="utf-8").strip()
+        if existing:
+            return existing
+    except FileNotFoundError:
+        pass
+    except OSError as error:
+        log.warning("cannot read %s (%s); using a secret for this run only", path, error)
+        return secrets.token_urlsafe(32)
+    secret = secrets.token_urlsafe(32)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(secret)
+    except FileExistsError:  # another start got there first
+        return path.read_text(encoding="utf-8").strip() or secret
+    except OSError as error:
+        log.warning("cannot save %s (%s); using a secret for this run only", path, error)
+    return secret
 
 
 async def _probe_provider(url: str) -> tuple[bool, str]:
@@ -227,6 +290,10 @@ def _exit_for_restart() -> None:
 def build_app(supervisor: Supervisor, settings: Settings,
               restart: Callable[[], None] = _exit_for_restart) -> FastAPI:
     app = FastAPI(title="Container Doctor", docs_url=None, redoc_url=None)
+    from starlette.middleware.gzip import GZipMiddleware
+
+    # The event stream is left alone: GZipMiddleware skips text/event-stream.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
     # Read once: what the deployment passes does not change while the doctor
     # runs, and the defaults are built by swapping the environment, which is
     # no thing to do per request.
@@ -238,7 +305,7 @@ def build_app(supervisor: Supervisor, settings: Settings,
     if settings.oidc_enabled:
         from starlette.middleware.sessions import SessionMiddleware
 
-        session_secret = settings.session_secret or secrets.token_urlsafe(32)
+        session_secret = session_secret_for(settings)
         oidc = OIDCClient(settings)
         sessions = OIDCSessions(oidc, supervisor.store, settings, session_secret)
         # Added first, so it runs inside SessionMiddleware and sees the session.
@@ -263,8 +330,30 @@ def build_app(supervisor: Supervisor, settings: Settings,
     def session_user(request: Request) -> str:
         return str(session_payload(request).get("name") or "")
 
+    failures: dict[str, list[float]] = {}
+
+    def too_many_failures(client: str) -> bool:
+        cutoff = time.monotonic() - PASSWORD_WINDOW_SECONDS
+        recent = [at for at in failures.get(client, ()) if at > cutoff]
+        if recent:
+            failures[client] = recent
+        else:
+            failures.pop(client, None)
+        return len(recent) >= PASSWORD_FAILURES
+
+    def password_matches(user: str, password: str) -> bool:
+        # Bytes, so any input compares rather than raising; both always
+        # compared, so the time taken does not say which one was wrong.
+        user_ok = secrets.compare_digest(user.encode(), settings.web_user.encode())
+        password_ok = secrets.compare_digest(password.encode(), settings.web_password.encode())
+        return user_ok and password_ok
+
     def identify(request: Request) -> str:
-        """Who is asking. Returns '' when no auth is configured at all."""
+        """Who is asking. Refuses everything when no sign-in is configured:
+        the API carries log lines and prompts, which are not for anyone who
+        can reach the port."""
+        if oidc is None and not settings.web_password:
+            raise HTTPException(status_code=403, detail=NO_SIGN_IN)
         signed_in = session_user(request)
         if signed_in:
             return signed_in
@@ -276,20 +365,23 @@ def build_app(supervisor: Supervisor, settings: Settings,
                 detail="sign in with your identity provider at /auth/login",
             )
         if not settings.password_login_allowed:
-            return ""
+            raise HTTPException(status_code=401, detail="authentication required")
         header = request.headers.get("authorization", "")
         if header.lower().startswith("basic "):
             import base64
 
+            client = client_of(request.scope)[0]
+            if too_many_failures(client):
+                raise HTTPException(status_code=429,
+                                    detail="too many wrong passwords; try again later")
             try:
                 decoded = base64.b64decode(header[6:]).decode("utf-8")
                 user, _, password = decoded.partition(":")
             except Exception:
                 user, password = "", ""
-            if secrets.compare_digest(user, settings.web_user) and secrets.compare_digest(
-                password, settings.web_password
-            ):
+            if password_matches(user, password):
                 return user
+            failures.setdefault(client, []).append(time.monotonic())
         # No Basic challenge here: the browser answers one with its own
         # password dialog, and these are the page's background reads. A tab
         # left open past its session got that dialog from the stream and the
@@ -314,16 +406,11 @@ def build_app(supervisor: Supervisor, settings: Settings,
         return require_login(request)
 
     def require_settings_writer(request: Request) -> str:
-        """Saving a setting: a writer, from this site's own page.
-
-        Session cookies are SameSite=lax, but a browser sends Basic
-        credentials it has cached with any request to the site, a cross-site
-        form's included. A browser always names the page a POST or PUT came
-        from in Origin, so one from elsewhere is refused."""
+        """Saving a setting: a writer, while the page is editable. That the
+        request came from this site's own page, `guard` has checked."""
         if not settings.settings_editable:
             raise HTTPException(status_code=403,
                                 detail="DOCTOR_SETTINGS_EDITABLE is off: the page is read-only.")
-        refuse_cross_site(request)
         return require_writer(request)
 
     def refuse_cross_site(request: Request) -> None:
@@ -334,6 +421,36 @@ def build_app(supervisor: Supervisor, settings: Settings,
                 allowed.add(urlparse(settings.public_url).netloc)
             if urlparse(origin).netloc not in allowed:
                 raise HTTPException(status_code=403, detail="cross-site request refused")
+        elif request.headers.get("sec-fetch-site", "") == "cross-site":
+            raise HTTPException(status_code=403, detail="cross-site request refused")
+
+    offline_csp = _offline_csp()
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        """Every write from this site's own page only, and every response
+        with headers that keep it out of frames and other sites' reach.
+
+        Session cookies are SameSite=lax, but a browser sends Basic
+        credentials it has cached with any request to the site, a cross-site
+        form's included. A browser names the page a write came from in
+        Origin, so one from elsewhere is refused; a client that sends no
+        Origin (curl, a script) is not a browser carrying someone's cookies."""
+        if request.method in UNSAFE_METHODS:
+            try:
+                refuse_cross_site(request)
+            except HTTPException as refused:
+                response: Response = JSONResponse({"detail": refused.detail},
+                                                  status_code=refused.status_code)
+            else:
+                response = await call_next(request)
+        else:
+            response = await call_next(request)
+        for name, value in SECURITY_HEADERS.items():
+            response.headers.setdefault(name, value)
+        if request.url.path == "/static/offline.html":
+            response.headers["Content-Security-Policy"] = offline_csp
+        return response
 
     # -- sign in ------------------------------------------------------------
 
@@ -437,7 +554,6 @@ def build_app(supervisor: Supervisor, settings: Settings,
             """Sign one of your sessions out. It is gone from the store at once,
             so its next request - or its open stream, within a minute - finds
             nothing to stand on."""
-            refuse_cross_site(request)
             session_id = await asyncio.to_thread(their_session, request, public)
             current = session_id == session_payload(request).get("sid")
             await asyncio.to_thread(supervisor.store.delete_oidc_session, session_id)
@@ -449,7 +565,6 @@ def build_app(supervisor: Supervisor, settings: Settings,
 
         @app.post("/api/profile/sessions/end-others")
         async def end_other_sessions(request: Request) -> dict[str, Any]:
-            refuse_cross_site(request)
             own_session(request)
             current = session_payload(request).get("sid")
             others = [row["id"] for row in await asyncio.to_thread(
@@ -464,7 +579,6 @@ def build_app(supervisor: Supervisor, settings: Settings,
         @app.put("/api/profile/sessions/{public}/name")
         async def name_session(public: str, body: SessionName, request: Request) -> dict[str, Any]:
             """Empty goes back to the name made from the device."""
-            refuse_cross_site(request)
             session_id = await asyncio.to_thread(their_session, request, public)
             await asyncio.to_thread(lambda: supervisor.store.describe_oidc_session(
                 session_id, label=" ".join(body.name.split())))
@@ -474,7 +588,6 @@ def build_app(supervisor: Supervisor, settings: Settings,
         async def report_device(body: DeviceReport, request: Request) -> dict[str, Any]:
             """What User-Agent Client Hints told the page about this device.
             Only ever a label: it names the session, it decides nothing."""
-            refuse_cross_site(request)
             own_session(request)
             session_id = session_payload(request)["sid"]
             await asyncio.to_thread(lambda: supervisor.store.describe_oidc_session(
@@ -515,11 +628,7 @@ def build_app(supervisor: Supervisor, settings: Settings,
             name = session_user(request) or basic_user(request)
         except Exception:
             name = ""
-        payload = {}
-        try:
-            payload = session_payload(request)
-        except Exception:
-            pass
+        payload = session_payload(request)  # never raises: {} without a session
         # Whether the page should ask the browser what device it is: once per
         # session, where Client Hints can say.
         device_reported = True
@@ -534,7 +643,10 @@ def build_app(supervisor: Supervisor, settings: Settings,
             "profile": bool(sessions is not None and payload.get("sid") and name),
             "device_reported": device_reported,
             "password_login": settings.password_login_allowed,
-            "authenticated": bool(name) or not (oidc is not None or settings.web_password),
+            "authenticated": bool(name),
+            # Neither a password nor OIDC: the page says what to set instead
+            # of offering a sign-in that cannot work.
+            "configured": oidc is not None or bool(settings.web_password),
         }
 
     # -- reads --------------------------------------------------------------
@@ -649,6 +761,7 @@ def build_app(supervisor: Supervisor, settings: Settings,
         body = {"format": EXPORT_FORMAT, "version": EXPORT_VERSION,
                 "exported_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "build": supervisor.settings.build,
+                "release": supervisor.settings.version,
                 "settings": dict(sorted(saved.items()))}
         return Response(json.dumps(body, indent=2) + "\n", media_type="application/json",
                         headers={"Content-Disposition":

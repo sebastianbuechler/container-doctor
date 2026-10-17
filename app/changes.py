@@ -212,7 +212,7 @@ def group_redeploys(changes: list[tuple[str, str, Change]]) -> None:
     for name, stack, change in changes:
         if change.kind in REDEPLOYED and stack:
             by_stack.setdefault(stack, []).append(name)
-    for name, stack, change in changes:
+    for _name, stack, change in changes:
         others = by_stack.get(stack, [])
         if change.kind in REDEPLOYED and len(others) > 1:
             change.detail["redeploy"] = {"stack": stack, "containers": sorted(others)}

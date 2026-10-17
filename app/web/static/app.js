@@ -4480,8 +4480,7 @@ async function refreshProfile() {
 
 function renderProfile({ user, claims, provider, sessions }) {
   const avatar = user.picture
-    ? `<img src="${esc(user.picture)}" alt=""
-        onerror="this.parentElement.textContent = ${esc(JSON.stringify(initials(user.name)))};">`
+    ? `<img src="${esc(user.picture)}" alt="" data-initials="${esc(initials(user.name))}">`
     : esc(initials(user.name));
   const keys = Object.keys(claims).filter((key) => key !== "picture").sort((a, b) => {
     const rank = (key) => (CLAIM_ORDER.includes(key) ? CLAIM_ORDER.indexOf(key) : CLAIM_ORDER.length);
@@ -4780,13 +4779,17 @@ async function refreshAccount() {
   state.me = me;
   const blocked = !me.authenticated;
   if (blocked) rememberRoute();
-  // Pocket ID when OIDC is configured; otherwise the browser's own password
-  // prompt, which only a challenge from the server brings up.
+  // The identity provider when OIDC is configured; otherwise the browser's
+  // own password prompt, which only a challenge from the server brings up.
   const button = document.querySelector(".signin-btn");
   if (button && !me.oidc) {
     button.href = "/auth/password";
     button.textContent = "Sign in";
   }
+  // No sign-in configured at all: nothing to press, only what to set.
+  const unconfigured = me.configured === false;
+  if (button) button.hidden = unconfigured;
+  $("signin-setup").hidden = !unconfigured;
   $("signin").hidden = !blocked;
   watchProvider(blocked && me.oidc);
   $("dashboard").hidden = blocked;
@@ -4800,7 +4803,7 @@ async function refreshAccount() {
   return !blocked;
 }
 
-// The dot under the sign-in button: is Pocket ID answering? Asked while the
+// The dot under the sign-in button: is the identity provider answering? Asked while the
 // card is up, and again when the tab comes back, since that is when someone
 // is about to press the button.
 let providerTimer = null;
@@ -4827,8 +4830,8 @@ async function checkProvider() {
   }
   pill.dataset.state = answer.online ? "online" : "offline";
   text.textContent = answer.online
-    ? "Pocket ID is online"
-    : `Pocket ID is unreachable${answer.detail ? ` (${answer.detail})` : ""}`;
+    ? "The identity provider is online"
+    : `The identity provider is unreachable${answer.detail ? ` (${answer.detail})` : ""}`;
   // Still pressable: the probe can be wrong, and the button explains a
   // failure itself. Dimmed so it does not promise more than it can do.
   if (button) button.dataset.provider = answer.online ? "online" : "offline";
@@ -4837,6 +4840,16 @@ async function checkProvider() {
 document.addEventListener("visibilitychange", () => {
   if (!document.hidden && providerTimer) checkProvider();
 });
+
+// An avatar that fails to load becomes its initials. Listened for here, not
+// with an onerror attribute: the Content-Security-Policy allows no inline
+// script. Error events do not bubble, so this listens in the capture phase.
+document.addEventListener("error", (event) => {
+  const img = event.target;
+  if (img instanceof HTMLImageElement && img.dataset.initials !== undefined && img.parentElement) {
+    img.parentElement.textContent = img.dataset.initials;
+  }
+}, true);
 
 function initials(name) {
   return name.split(/[\s._@-]+/).filter(Boolean).slice(0, 2)
@@ -4851,8 +4864,7 @@ function renderAccount(me) {
     // or missing image never leaves an empty circle.
     // Setting the parent's textContent replaces the <img>; removing it first
     // would null out parentElement and leave a broken-image glyph.
-    avatar.innerHTML = `<img src="${esc(me.picture)}" alt=""
-      onerror="this.parentElement.textContent = ${esc(JSON.stringify(initials(me.user)))};">`;
+    avatar.innerHTML = `<img src="${esc(me.picture)}" alt="" data-initials="${esc(initials(me.user))}">`;
   } else {
     avatar.textContent = initials(me.user);
   }

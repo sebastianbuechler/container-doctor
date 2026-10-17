@@ -169,8 +169,8 @@ class Applying(unittest.TestCase):
 
     def test_only_restart_settings_changes_nothing(self):
         old = self.supervisor.settings
-        result = self.apply(docker_host="tcp://elsewhere:2375")
-        self.assertEqual(result, {"applied": [], "restart": ["docker_host"]})
+        result = self.apply(poll_concurrency=2)
+        self.assertEqual(result, {"applied": [], "restart": ["poll_concurrency"]})
         self.assertIs(self.supervisor.settings, old)
 
     def test_what_was_built_from_them_is_built_again(self):
@@ -328,11 +328,10 @@ class ThroughTheApi(unittest.TestCase):
         self.assertEqual(self.supervisor.settings.cpu_threshold_pct, 85.0)
 
     def test_a_value_that_adds_a_problem_is_refused(self):
-        """Auto mode with no sign-in configured: the file is refused, whole."""
-        self.patch_env(DOCTOR_WEB_PASSWORD="")
-        response = self.importing({"DOCTOR_MODE": "auto", "DOCTOR_CPU_THRESHOLD": "40"})
+        """A confidence no diagnosis can reach: the file is refused, whole."""
+        response = self.importing({"DOCTOR_MIN_CONFIDENCE": "2", "DOCTOR_CPU_THRESHOLD": "40"})
         self.assertEqual(response.status_code, 422)
-        self.assertIn("No sign-in configured", response.json()["detail"])
+        self.assertIn("DOCTOR_MIN_CONFIDENCE", response.json()["detail"])
         self.assertEqual(self.supervisor.store.saved_settings(), {})
 
     def test_another_file_is_refused(self):
