@@ -758,12 +758,6 @@ Cap on the tokens one diagnosis may answer with.
 
 **Default:** `4000` · **Type:** whole number
 
-### DOCTOR_NTFY_PRIORITY
-
-Not read at present: each notification's priority follows its severity.
-
-**Default:** `default`
-
 ### DOCTOR_OIDC_GROUPS_CLAIM
 
 The ID token claim holding the user's groups, for DOCTOR_OIDC_ALLOWED_GROUPS.
