@@ -1,6 +1,6 @@
 """Generate the README pipeline diagram in both themes from one source.
 
-    python docs/make-diagram.py
+    python scripts/make-diagram.py
 
 Re-run after editing and commit both SVGs. Stdlib only, no dependencies.
 
@@ -117,7 +117,7 @@ def build(c):
     a(f'<text x="{BAR_X + 20}" y="{BAR_Y + 29}" font-size="15" font-weight="600" '
       f'fill="{c["ink"]}">Containers on the host</text>')
     a(f'<text x="{BAR_X + BAR_W - 20}" y="{BAR_Y + 29}" font-size="12" text-anchor="end" '
-      f'fill="{c["muted"]}">Compose stacks from this repo</text>')
+      f'fill="{c["muted"]}">Compose stacks, however deployed</text>')
 
     # --- the boundary both directions cross ------------------------------
     a(f'<line x1="18" y1="{BOUNDARY_Y}" x2="{RETURN_X + 8}" y2="{BOUNDARY_Y}" '
@@ -205,7 +205,7 @@ def build(c):
 
 
 check_layout()
-out = Path(__file__).resolve().parent
+out = Path(__file__).resolve().parents[1] / "docs" / "src" / "assets"
 (out / "how-it-works-light.svg").write_text(build(LIGHT))
 (out / "how-it-works-dark.svg").write_text(build(DARK))
 print("wrote both variants")

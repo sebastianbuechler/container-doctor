@@ -1,5 +1,9 @@
 # Container Doctor
 
+**[Documentation](https://sebastianbuechler.github.io/container-doctor/)** ·
+[Quick start](https://sebastianbuechler.github.io/container-doctor/getting-started/quick-start/) ·
+[Releases](https://github.com/sebastianbuechler/container-doctor/releases)
+
 An AI triage agent for the Docker containers on one Linux host. Deterministic
 rules decide whether something is wrong; a model explains why and proposes at
 most one fixed action; plain code decides whether anything happens - and, by
@@ -8,8 +12,8 @@ does is on a web dashboard.
 
 <p align="center">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="docs/how-it-works-dark.svg">
-    <img alt="Rules open an incident; evidence is gathered with secrets stripped; a model explains it and proposes one of five fixed actions; a policy engine notifies, waits for approval, or acts and verifies." src="docs/how-it-works-light.svg" width="100%">
+    <source media="(prefers-color-scheme: dark)" srcset="docs/src/assets/how-it-works-dark.svg">
+    <img alt="Rules open an incident; evidence is gathered with secrets stripped; a model explains it and proposes one of five fixed actions; a policy engine notifies, waits for approval, or acts and verifies." src="docs/src/assets/how-it-works-light.svg" width="100%">
   </picture>
 </p>
 
@@ -39,13 +43,13 @@ diagnoses, and changes nothing.
 - **Optional:** OIDC sign-in, ntfy notifications, SMART drive health (the
   `doctor-smart` service; remove it if you don't want it), and a Redeploy
   button through a GitHub Actions workflow
-  ([`docs/redeploy-workflow.yml`](docs/redeploy-workflow.yml)).
+  ([`examples/redeploy-workflow.yml`](examples/redeploy-workflow.yml)).
 
 ## More
 
-[`docs/guide.md`](docs/guide.md) covers everything in depth: what opens an
-incident, the dashboard, settings, sign-in, models and their cost, and
-security.
+The [documentation](https://sebastianbuechler.github.io/container-doctor/)
+covers everything in depth: what opens an incident, the dashboard, settings,
+sign-in, models and their cost, security, and every environment variable.
 
 ## Development
 

@@ -1,0 +1,180 @@
+---
+title: "Models and cost"
+description: "Anthropic or any OpenAI-compatible model, what is sent, what it costs, and free and local options."
+---
+
+The **LLM** page answers two questions: what did the doctor send, and what did
+it cost.
+
+**Spend** is a bar per day, split by what it paid for: diagnoses, the
+dashboard summary and the classifier. Choose 14, 30 or 90 days. Hover a day for
+its breakdown, or open the table view. The daily budget is drawn as a line when
+the bars get anywhere near it. Days older than the call log keep their total,
+shown as *not itemized*, because the daily totals are kept as long as the
+incidents.
+
+**Calls** lists every request, newest first: its purpose, model, tokens, time
+taken and cost, or the error when it failed. Open one to read exactly what went
+out:
+
+- the system prompt and the prompt, with the evidence already redacted;
+- the answer schema and the parameters (effort, and how an OpenAI-compatible
+  vendor accepted the request);
+- the endpoint it went to;
+- the answer as it came back.
+
+A diagnosis links back to its incident. **Copy the prompt** puts the whole
+request on the clipboard.
+
+The bodies are kept for `DOCTOR_LLM_LOG_DAYS` (default 14; `0` keeps none). A
+failure to write the log is itself logged and never costs the call.
+
+## Cost and model choice
+
+Two things keep the bill small:
+
+- **The rules gate the model.** A quiet week costs nothing at all — no incidents,
+  no API calls.
+- **Identical failures are free.** Each incident is fingerprinted from the
+  container, the failure kind and a normalised log signature. A condition that
+  is still open and still firing folds into the incident it already has, which
+  gains a sighting count and a last-seen time instead of a duplicate row; a
+  repeat after it has cleared reuses the stored diagnosis for
+  `DOCTOR_DIAGNOSIS_CACHE_HOURS`. A container crash-looping all night is one
+  API call, not two hundred.
+
+  `DOCTOR_INCIDENT_DEDUP_HOURS` (default 24) is how long a recurrence keeps
+  folding in, measured from when it was last seen. A failure that gets *worse*
+  — a disk going from 92% to 96% — always opens its own incident, so an
+  escalation is never folded into a row you have already read.
+
+On top of that, `DOCTOR_DAILY_USD_BUDGET` is a hard stop: once today's spend
+reaches it, incidents are still detected, recorded and notified — they just
+aren't diagnosed until tomorrow. The dashboard shows spend against the cap.
+
+The default model is `claude-opus-5`, but the provider is pluggable: set
+`DOCTOR_LLM_PROVIDER=openai` and point `DOCTOR_OPENAI_BASE_URL` at any
+OpenAI-compatible endpoint. That covers most of the market, including Google's
+own Gemini endpoint.
+
+### Testing a vendor in 30 seconds
+
+Don't change the config and then wait for a container to break. There's a
+self-test that pushes one realistic synthetic incident through whatever is
+configured and prints the diagnosis, latency, tokens and cost:
+
+```bash
+docker compose exec container-doctor python -m app.selftest
+```
+
+```
+provider : openai
+model    : gemini-3-flash
+base_url : https://generativelanguage.googleapis.com/v1beta/openai
+
+{ "summary": "memos cannot reach its Postgres database at db:5432.", ... }
+
+latency       : 1.8s
+tokens        : 1450 in / 190 out
+cost          : $0.00 (free tier, or no price configured)
+
+USABLE? looks good - schema honoured, reasoning grounded in the evidence.
+```
+
+The sample incident is a container failing its health check because a
+*dependency* is down. The right answer is `notify_only` with steps, or a
+restart hedged with a caveat — a model that confidently proposes
+`prune_images` there is telling you something useful about itself. The
+self-test flags that for you.
+
+### Free options, ranked
+
+| Vendor | Cost | Limits | Notes |
+|---|---|---|---|
+| **Google Gemini** | Free, no card | 10 RPM / 1,500 RPD on Gemini 3 Flash; 2.5 Pro is 50 RPD | **Start here.** Frontier-tier vendor, and the OpenAI-compatible endpoint means no code change. See the privacy caveat below. |
+| **OpenRouter** | `:free` variants cost nothing; paid models are cheap | 20 RPM; 50 RPD under $10 of credits, 1,000 RPD above (free variants only) | Best for *comparing* vendors — one key, swap `DOCTOR_MODEL` to A/B them. A cheap paid model avoids the free-tier rate limits and still costs cents a month here; see below. |
+| **Groq** | Free, no card | 30 RPM / 1,000 RPD | Fastest by a distance, but open-weight models (`gpt-oss`, Qwen) rather than frontier ones. |
+| **Local (Ollama)** | Free forever | Your hardware | Nothing leaves the house. A Synology is usually too slow for a model big enough to diagnose well — good for the paranoid case, not the quality case. |
+
+Rate limits are not the constraint you might expect. This tool only calls a
+model when a rule has *already* decided something is wrong, and identical
+failures reuse a cached diagnosis, so a normal week is single-digit calls.
+Gemini's free 1,500/day is roughly two orders of magnitude more headroom than
+a homelab needs.
+
+:::caution
+**Privacy caveat, and it matters here.** Google may use free-tier inputs and
+outputs to improve its models. This tool sends container log tails — redacted,
+but still yours. If that's not acceptable, use a paid tier (Gemini paid or
+Vertex AI don't train on your data), or run locally. Weigh it knowing what's
+actually in your logs.
+:::
+
+### A cheap paid model, if you'd rather skip the free-tier limits
+
+Free tiers are rate-limited and (on Gemini) train on your inputs. A cheap paid
+model sidesteps both, and this workload is small enough that "cheap" means
+cents. Via OpenRouter:
+
+```
+DOCTOR_LLM_PROVIDER=openai
+DOCTOR_OPENAI_BASE_URL=https://openrouter.ai/api/v1
+DOCTOR_OPENAI_API_KEY=<your OpenRouter key>
+DOCTOR_MODEL=openai/gpt-6-luna
+DOCTOR_PRICE_IN_PER_MTOK=0.10
+DOCTOR_PRICE_OUT_PER_MTOK=0.50
+```
+
+One incident is roughly 1,450 input and 190 output tokens, so about
+**$0.00024** — a hundred incidents in a month is two and a half cents. Prices
+move; check the model page and update the two `_PER_MTOK` values so the
+dashboard meter stays honest.
+
+Run `python -m app.selftest` after switching. It prints which request shape the
+vendor accepted, the real token counts and the cost per incident.
+
+### Metering a non-Anthropic vendor
+
+The spend meter knows Anthropic's prices. For anything else, tell it what you
+pay, in USD per million tokens:
+
+```
+DOCTOR_PRICE_IN_PER_MTOK=0.30
+DOCTOR_PRICE_OUT_PER_MTOK=2.50
+```
+
+On a free tier leave those alone and set the cap that actually binds — requests
+per day, not dollars:
+
+```
+DOCTOR_DAILY_CALL_LIMIT=300
+```
+
+The dashboard tile switches to `calls / limit` automatically when spend is zero
+and a call cap is set. Without a call cap on a free tier the doctor warns you at
+startup, because the dollar budget would never stop anything.
+
+### Vendor quirks, already handled
+
+OpenAI-compatible endpoints are compatible to varying degrees. Rather than
+constrain you to the well-behaved ones:
+
+- A vendor that rejects `response_format: json_schema` (400/404/422) gets
+  retried in plain JSON mode with the schema spelled out in the prompt.
+- A model that wraps its JSON in a ```` ```json ```` fence or adds "Here you
+  go!" is parsed anyway.
+- 429s and 5xx are retried with exponential backoff, honouring `Retry-After`
+  — free tiers rate-limit hard, and a burst of incidents will hit that.
+- Anthropic-only request fields (`effort`, adaptive thinking) are omitted for
+  models that would reject them.
+- Unsupported parameters are dropped **one at a time**, so a vendor that
+  refuses only `temperature` keeps its schema enforcement. That matters for
+  reasoning models: GPT-6 Luna rejects `temperature` at any reasoning effort
+  above `none`, but does support structured outputs — dropping both would give
+  away the schema guarantee for no reason. Set `DOCTOR_LLM_TEMPERATURE=-1` to
+  skip the extra round trip once you know your model refuses it.
+
+Whatever the vendor returns still goes through the same coercion: an action
+outside the enum becomes `notify_only`, and confidence is clamped. A weaker
+model can give you a worse *diagnosis*; it cannot widen what the doctor is
+allowed to do.

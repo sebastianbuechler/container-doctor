@@ -2069,7 +2069,7 @@ function renderSmart() {
   if (s.error) {
     sub.textContent = "";
     host.innerHTML = `<p class="empty">The <code>doctor-smart</code> sidecar is not answering
-      (${esc(s.error)}). It reads SMART for the doctor; see "Drive health" in docs/guide.md.</p>`;
+      (${esc(s.error)}). It reads SMART for the doctor; see <a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#drive-health" target="_blank" rel="noopener">Drive health</a> in the documentation.</p>`;
     return;
   }
   const drives = s.drives || [];

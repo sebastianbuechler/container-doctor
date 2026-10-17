@@ -1,0 +1,100 @@
+---
+title: "Quick start"
+description: "Run Container Doctor on a Docker host in five minutes with the reference compose file."
+---
+
+import { Steps, Tabs, TabItem, Aside } from '@astrojs/starlight/components';
+
+You need a Linux host running Docker with Compose v2, and an API key for a
+model - Anthropic's, or any OpenAI-compatible one, local models included.
+
+<Steps>
+
+1. **Get the reference compose file.** It runs the doctor, its socket proxy and
+   an optional SMART sidecar for drive health.
+
+   ```bash
+   mkdir container-doctor && cd container-doctor
+   curl -O https://raw.githubusercontent.com/sebastianbuechler/container-doctor/main/compose.example.yaml
+   ```
+
+2. **Create the data directory**, owned by the user the doctor runs as
+   (`1000:1000` unless you set `DOCTOR_UID` and `DOCTOR_GID`):
+
+   ```bash
+   mkdir -p data && sudo chown 1000:1000 data
+   ```
+
+3. **Set the minimum.** Put a model and a dashboard password in a `.env` file
+   next to the compose file:
+
+   <Tabs syncKey="provider">
+   <TabItem label="Anthropic">
+   ```ini title=".env"
+   ANTHROPIC_API_KEY=sk-ant-...
+   DOCTOR_WEB_PASSWORD=something-long
+   ```
+   </TabItem>
+   <TabItem label="OpenRouter">
+   ```ini title=".env"
+   DOCTOR_LLM_PROVIDER=openai
+   DOCTOR_OPENAI_BASE_URL=https://openrouter.ai/api/v1
+   DOCTOR_OPENAI_API_KEY=sk-or-...
+   DOCTOR_MODEL=openai/gpt-6-luna
+   DOCTOR_WEB_PASSWORD=something-long
+   ```
+   </TabItem>
+   <TabItem label="Local (Ollama)">
+   ```ini title=".env"
+   DOCTOR_LLM_PROVIDER=openai
+   DOCTOR_OPENAI_BASE_URL=http://ollama:11434/v1
+   DOCTOR_MODEL=<a model you have pulled>
+   DOCTOR_WEB_PASSWORD=something-long
+   ```
+   </TabItem>
+   </Tabs>
+
+4. **Start it.**
+
+   ```bash
+   docker compose -f compose.example.yaml up -d
+   ```
+
+5. **Open the dashboard** at `http://<host>:8080` and sign in with the password.
+
+</Steps>
+
+Any OpenAI-compatible endpoint works the same way; see
+[Models and cost](/container-doctor/guides/models/) for free, cheap and local options.
+
+It starts in `observe` mode: it detects incidents and diagnoses them, and
+changes nothing. Read a week of its diagnoses before you let it act - see
+[Your first week](/container-doctor/getting-started/first-week/).
+
+<Aside type="caution" title="Before exposing it">
+Put a reverse proxy with TLS in front of the dashboard before it is reachable
+from outside your LAN, set `DOCTOR_PUBLIC_URL` to its address, and consider
+[OIDC sign-in](/container-doctor/guides/sign-in/).
+</Aside>
+
+## Check that it works
+
+Two commands, run inside the doctor's container, tell you whether the Docker
+endpoint and the model are wired up correctly:
+
+```bash
+# What the Docker endpoint permits - restart yes, create no
+docker compose -f compose.example.yaml exec container-doctor python -m app.preflight
+
+# One synthetic incident through the model, without touching a container
+docker compose -f compose.example.yaml exec container-doctor python -m app.selftest
+```
+
+## Next steps
+
+- [Installation](/container-doctor/getting-started/installation/) - hosts, Docker managers and what the
+  compose file sets up.
+- [Settings](/container-doctor/guides/settings/) - everything but secrets can be changed on
+  the dashboard.
+- [Environment variables](/container-doctor/reference/environment-variables/) - every
+  setting, generated from the code.

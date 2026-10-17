@@ -229,6 +229,8 @@ def setting(env: str, default: Any, *, choices: type[StrEnum] | None = None,
 
 @dataclass(frozen=True)
 class Settings:
+    # The Docker endpoint: the socket proxy, never the raw socket. The compose
+    # file sets it from DOCTOR_DOCKER_HOST.
     docker_host: str = setting("DOCKER_HOST", "tcp://doctor-socket-proxy:2375", restart=True)
 
     mode: Mode = setting("DOCTOR_MODE", "observe", choices=Mode, convert=_validate_mode)
@@ -253,6 +255,7 @@ class Settings:
     # as far as it has been running - Docmost's Postgres was serving FATAL lines
     # from 2025 to a poll in 2026, which read as a live failure.
     log_max_age_minutes: int = setting("DOCTOR_LOG_MAX_AGE_MINUTES", 60)
+    # A log line matching this counts as an error, whatever its level says.
     log_error_pattern: str = setting(
         "DOCTOR_LOG_ERROR_PATTERN",
         r"(?i)\b(fatal|panic|traceback|segfault|out of memory|oomkill|"
@@ -284,6 +287,7 @@ class Settings:
     disk_trend_window_days: int = setting("DOCTOR_DISK_TREND_WINDOW_DAYS", 14)
     disk_forecast_days: int = setting("DOCTOR_DISK_FORECAST_DAYS", 21)
     disk_forecast_critical_days: int = setting("DOCTOR_DISK_FORECAST_CRITICAL_DAYS", 5)
+    # How often a disk's free space is recorded for the fill forecast.
     disk_sample_minutes: int = setting("DOCTOR_DISK_SAMPLE_MINUTES", 60)
     disk_critical_pct: float = setting("DOCTOR_DISK_CRITICAL", 95.0)
     # How many newly corrected read errors in a day turn a drive's warning
@@ -296,6 +300,8 @@ class Settings:
     # drive that had a bad day would warn until the next one.
     raid_errors_days: int = setting("DOCTOR_RAID_ERRORS_DAYS", 7, convert=lambda v: max(1, v))
 
+    # Circuit breakers: at most this many actions on one container, and on the
+    # whole host, in any hour. doctor.max_actions_per_hour tightens the first.
     max_actions_per_container_per_hour: int = setting(
         "DOCTOR_MAX_ACTIONS_PER_CONTAINER_PER_HOUR", 3)
     max_actions_global_per_hour: int = setting("DOCTOR_MAX_ACTIONS_GLOBAL_PER_HOUR", 10)
@@ -307,6 +313,7 @@ class Settings:
     anthropic_api_key: str = setting("ANTHROPIC_API_KEY", "", secret=True)
     model: str = setting("DOCTOR_MODEL", "claude-opus-5")
     effort: str = setting("DOCTOR_EFFORT", "medium", choices=Effort)
+    # Cap on the tokens one diagnosis may answer with.
     max_output_tokens: int = setting("DOCTOR_MAX_OUTPUT_TOKENS", 4000)
     # OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...).
     openai_base_url: str = setting("DOCTOR_OPENAI_BASE_URL", "")
@@ -331,22 +338,31 @@ class Settings:
     # rejects it outright); the request path also drops it if a vendor objects.
     llm_temperature: float = setting("DOCTOR_LLM_TEMPERATURE", 0.2)
 
+    # ntfy server to publish to, e.g. https://ntfy.sh or http://ntfy:80. Empty
+    # sends no notifications.
     ntfy_url: str = setting("DOCTOR_NTFY_URL", "")
+    # The ntfy topic notifications are published to.
     ntfy_topic: str = setting("DOCTOR_NTFY_TOPIC", "container-doctor")
+    # Access token for a protected ntfy topic.
     ntfy_token: str = setting("DOCTOR_NTFY_TOKEN", "", secret=True)
+    # Not read at present: each notification's priority follows its severity.
     ntfy_priority: str = setting("DOCTOR_NTFY_PRIORITY", "default")
 
+    # Address and port the dashboard listens on inside the container.
     web_host: str = setting("DOCTOR_WEB_HOST", "0.0.0.0", env_only=True)
     web_port: int = setting("DOCTOR_WEB_PORT", 8080, env_only=True)
     # --- OIDC ---------------------------------------------------------------
     # Issuer base URL, e.g. https://id.example.com. Empty disables OIDC.
     oidc_issuer: str = setting("DOCTOR_OIDC_ISSUER", "", restart=True, convert=lambda v: v.rstrip("/"))
+    # The client ID registered with the provider for the doctor.
     oidc_client_id: str = setting("DOCTOR_OIDC_CLIENT_ID", "", restart=True)
     oidc_client_secret: str = setting("DOCTOR_OIDC_CLIENT_SECRET", "", secret=True)
     # The doctor's own public base URL; the redirect URI is derived from it and
     # must match what the provider has registered exactly.
     public_url: str = setting("DOCTOR_PUBLIC_URL", "", restart=True, convert=lambda v: v.rstrip("/"))
+    # Scopes requested at sign-in, space-separated.
     oidc_scopes: str = setting("DOCTOR_OIDC_SCOPES", "openid profile email groups", restart=True)
+    # The ID token claim holding the user's groups, for DOCTOR_OIDC_ALLOWED_GROUPS.
     oidc_groups_claim: str = setting("DOCTOR_OIDC_GROUPS_CLAIM", "groups", restart=True)
     # Empty means any account the provider authenticates.
     oidc_allowed_groups: list[str] = setting("DOCTOR_OIDC_ALLOWED_GROUPS", (), restart=True)
@@ -368,6 +384,7 @@ class Settings:
     settings_editable: bool = setting("DOCTOR_SETTINGS_EDITABLE", True, env_only=True)
     web_password: str = setting("DOCTOR_WEB_PASSWORD", "", secret=True)
 
+    # Where the database lives inside the container; mount a volume here.
     data_dir: str = setting("DOCTOR_DATA_DIR", "/data", env_only=True)
     # Resolve an incident whose condition has not re-fired for this long. 0 is
     # off. Kinds that suppress their own re-alerts are excluded - see
@@ -388,7 +405,7 @@ class Settings:
     # this one repository, with Actions read/write and Contents read. Unset,
     # the page only reports.
     github_token: str = setting("DOCTOR_GITHUB_TOKEN", "", secret=True)
-    # owner/repository the stacks are deployed from; see docs/redeploy-workflow.yml.
+    # owner/repository the stacks are deployed from; see examples/redeploy-workflow.yml.
     deploy_repo: str = setting("DOCTOR_DEPLOY_REPO", "",
                                convert=lambda v: v.strip("/"))
     deploy_workflow: str = setting("DOCTOR_DEPLOY_WORKFLOW", "deploy-stacks.yml")
@@ -425,6 +442,7 @@ class Settings:
                                        choices=ClassifierProvider)
     # Pinned rather than -latest, so verdicts do not drift under you.
     classifier_model: str = setting("DOCTOR_CLASSIFIER_MODEL", "typesafe/jev-1.13")
+    # The Decisions API endpoint the openrouter backend calls.
     classifier_url: str = setting(
         "DOCTOR_CLASSIFIER_URL", "https://openrouter.ai/api/alpha/decisions")
     # Unset falls back to the diagnosis's key when that is an OpenRouter one;
@@ -504,6 +522,7 @@ class Settings:
     # Stamped into the image by CI. "dev" means a local build.
     build: str = setting("DOCTOR_BUILD", "dev", env_only=True)
     log_level: str = setting("DOCTOR_LOG_LEVEL", "INFO", env_only=True, convert=lambda v: v.upper())
+    # The doctor's own container name: it never diagnoses or acts on itself.
     self_container_name: str = setting("DOCTOR_SELF_NAME", "container-doctor")
 
     @property

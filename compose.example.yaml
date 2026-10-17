@@ -244,7 +244,7 @@ services:
       - DOCTOR_UPDATE_COOLDOWN_DAYS=${DOCTOR_UPDATE_COOLDOWN_DAYS:-}
       # A Redeploy button for new builds: runs a GitHub Actions workflow in
       # the repository the stacks are deployed from (DOCTOR_DEPLOY_REPO; see
-      # docs/redeploy-workflow.yml). A fine-grained token on that repository
+      # examples/redeploy-workflow.yml). A fine-grained token on that repository
       # only, Actions read and write, Contents read. Empty: report only.
       - DOCTOR_GITHUB_TOKEN=${DOCTOR_GITHUB_TOKEN:-}
       - DOCTOR_DEPLOY_REPO=${DOCTOR_DEPLOY_REPO:-}

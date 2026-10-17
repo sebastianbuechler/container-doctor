@@ -7,7 +7,7 @@
 <g font-family="system-ui,-apple-system,Segoe UI,sans-serif">
 <rect x="20" y="16" width="904" height="46" rx="10" fill="#ffffff" stroke="#dcdbd4"/>
 <text x="40" y="45" font-size="15" font-weight="600" fill="#0b0b0b">Containers on the host</text>
-<text x="904" y="45" font-size="12" text-anchor="end" fill="#8a8880">Compose stacks from this repo</text>
+<text x="904" y="45" font-size="12" text-anchor="end" fill="#8a8880">Compose stacks, however deployed</text>
 <line x1="18" y1="86" x2="962" y2="86" stroke="#dcdbd4" stroke-width="1.5" stroke-dasharray="6 5"/>
 <rect x="310" y="75" width="356" height="22" fill="#f9f9f7"/>
 <text x="488" y="90" font-size="11.5" text-anchor="middle" fill="#8a8880">socket proxy · no exec, volumes or secrets</text>
