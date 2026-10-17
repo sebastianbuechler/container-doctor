@@ -3,7 +3,7 @@
 The doctor cannot pull an image or create a container - the socket proxy
 denies both, and that is the point of it. The repository the stacks deploy
 from (DOCTOR_DEPLOY_REPO) has a workflow that redeploys a stack, run by hand
-with its name - docs/redeploy-workflow.yml says what it must accept. The
+with its name - examples/redeploy-workflow.yml says what it must accept. The
 doctor starts that run, so the webhooks live in one place and the doctor
 holds one token that can do no more than run the repository's workflows and
 read its files.

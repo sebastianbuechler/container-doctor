@@ -11,6 +11,8 @@ on:
     paths-ignore:
       - 'README.md'
       - 'docs/**'
+      - 'examples/**'
+      - 'scripts/**'
       - 'tests/**'
   workflow_dispatch:
 

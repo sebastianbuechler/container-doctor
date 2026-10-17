@@ -1,0 +1,58 @@
+---
+title: "Container Doctor"
+description: "AI triage for the Docker containers on one host. Rules detect, a model explains, you decide what happens."
+template: splash
+hero:
+  tagline: AI triage for the Docker containers on one host. Rules detect what is wrong, a model explains why, and nothing happens until you say so.
+  image:
+    file: ../../assets/logo.svg
+  actions:
+    - text: Quick start
+      link: /container-doctor/getting-started/quick-start/
+      icon: right-arrow
+    - text: How it works
+      link: /container-doctor/concepts/how-it-works/
+      variant: minimal
+    - text: GitHub
+      link: https://github.com/sebastianbuechler/container-doctor
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+<CardGrid stagger>
+  <Card title="Rules decide, a model explains" icon="seti:config">
+    Deterministic rules open an incident; the model only ever explains one that
+    already exists, and picks at most one action from a closed list of five.
+  </Card>
+  <Card title="Nothing without you" icon="approve-check">
+    Starts in `observe`. `suggest` asks before it acts; `auto` acts only where
+    you allowed it, inside rate limits, and checks that it helped.
+  </Card>
+  <Card title="Restart, never create" icon="warning">
+    Docker is reached through a socket proxy that permits restarting a
+    container and nothing that could escape one. No mount of your data.
+  </Card>
+  <Card title="Secrets stay out" icon="seti:lock">
+    Logs are scrubbed of tokens and keys before anything is stored or sent to a
+    model, and every request it sent can be read back on the dashboard.
+  </Card>
+  <Card title="Any model" icon="rocket">
+    Anthropic or anything OpenAI-compatible - OpenRouter, Gemini, Groq, or a
+    local model. A daily budget hard-stops spend.
+  </Card>
+  <Card title="The whole host" icon="laptop">
+    Disks and their fill rate, SMART and RAID, CPU and memory, the network and
+    DNS, image updates with release notes, and what changed on each container.
+  </Card>
+</CardGrid>
+
+## Where to go next
+
+<CardGrid>
+  <LinkCard title="Introduction" description="What it is, and why it is built the way it is." href="/container-doctor/getting-started/introduction/" />
+  <LinkCard title="Quick start" description="Running in five minutes with the reference compose file." href="/container-doctor/getting-started/quick-start/" />
+  <LinkCard title="Environment variables" description="Every setting, generated from the code." href="/container-doctor/reference/environment-variables/" />
+  <LinkCard title="Security" description="What it can reach, and what it refuses to do." href="/container-doctor/guides/security/" />
+</CardGrid>
