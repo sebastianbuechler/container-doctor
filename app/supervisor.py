@@ -1609,11 +1609,9 @@ class Supervisor:
             return cached, ""
 
         usage = await asyncio.to_thread(self.store.usage_today)
-        if self.settings.daily_usd_budget > 0 and usage["cost_usd"] >= self.settings.daily_usd_budget:
-            note = (
-                f"daily LLM budget of ${self.settings.daily_usd_budget:.2f} is spent "
-                f"(${usage['cost_usd']:.2f} today) - diagnosis skipped"
-            )
+        spent = self._budget_spent(usage)
+        if spent:
+            note = f"{spent} - diagnosis skipped"
             log.warning(note)
             return None, note
         # Free tiers are metered in requests per day, so that is the cap that
@@ -1712,7 +1710,9 @@ class Supervisor:
         self, action_id: str, incident: dict[str, Any], diagnosis: dict[str, Any] | None
     ) -> None:
         action_row = await asyncio.to_thread(self.store.get_action, action_id)
-        if not action_row:
+        # Only an action claimed for execution runs - by the policy's claim or
+        # a person's take_pending_action - and each claim runs it once.
+        if not action_row or action_row["status"] != "executing":
             return
         action = action_row["action"]
         incident_id = incident["id"]
@@ -1746,7 +1746,7 @@ class Supervisor:
             self.broadcast("action", {"incident_id": incident_id, "action": action, "status": "succeeded"})
             return
 
-        healthy, detail = await self.executor.verify(container_id, name)
+        healthy, detail = await self.executor.verify(container_id, name, action)
         status = "succeeded" if healthy else "failed"
         await asyncio.to_thread(self.store.finish_action, action_id, status, f"{result}; {detail}")
         await asyncio.to_thread(
@@ -1775,20 +1775,27 @@ class Supervisor:
 
         protected = self.policy.protected(incident["container_name"])
         if protected:
-            await asyncio.to_thread(self.store.finish_action, action_id, "rejected", protected)
+            await asyncio.to_thread(self.store.take_pending_action, action_id, "rejected", protected)
             return {"ok": False, "error": protected}
 
+        # A person's approval overrides the circuit breaker and the cooldown:
+        # those stop the doctor repeating itself, and "repeated failure needs
+        # a human" is exactly this. The approver is recorded as the decider.
+        taken = await asyncio.to_thread(
+            self.store.take_pending_action, action_id, "executing", f"approved by {actor}",
+            decided_by=f"user:{actor}")
+        if not taken:
+            return {"ok": False, "error": "action is no longer pending"}
         log.info("%s approved %s on %s", actor, action_row["action"], incident["container_name"])
-        asyncio.create_task(self._run_action(action_id, incident, incident.get("diagnosis")))
+        self._spawn_action(action_id, incident, incident.get("diagnosis"))
         return {"ok": True, "action": action_row["action"], "container": incident["container_name"]}
 
     async def reject_action(self, action_id: str, actor: str = "user") -> dict[str, Any]:
         action_row = await asyncio.to_thread(self.store.get_action, action_id)
-        if not action_row or action_row["status"] != "pending":
+        if not action_row or not await asyncio.to_thread(
+                self.store.take_pending_action, action_id, "rejected", f"rejected by {actor}",
+                decided_by=f"user:{actor}"):
             return {"ok": False, "error": "no pending action with that id"}
-        await asyncio.to_thread(
-            self.store.finish_action, action_id, "rejected", f"rejected by {actor}"
-        )
         await asyncio.to_thread(
             self.store.set_incident_status, action_row["incident_id"], "open"
         )
@@ -1802,7 +1809,7 @@ class Supervisor:
         for action in await asyncio.to_thread(self.store.list_actions, incident_id=incident_id):
             if action["status"] == "pending":
                 await asyncio.to_thread(
-                    self.store.finish_action, action["id"], "rejected", f"dismissed by {actor}"
+                    self.store.take_pending_action, action["id"], "rejected", f"dismissed by {actor}"
                 )
         await asyncio.to_thread(self.store.set_incident_status, incident_id, "dismissed", resolved=True)
         self.broadcast("incident", {"id": incident_id, "status": "dismissed"})
@@ -1843,8 +1850,19 @@ class Supervisor:
             reason="manual request from the dashboard",
         )
         incident = await asyncio.to_thread(self.store.get_incident, incident_id)
-        asyncio.create_task(self._run_action(action_id, incident, None))
+        # Like an approval, a manual request is a person's decision: the
+        # circuit breaker does not stand in its way.
+        await asyncio.to_thread(self.store.take_pending_action, action_id, "executing",
+                                f"requested by {actor}")
+        self._spawn_action(action_id, incident, None)
         return {"ok": True, "incident_id": incident_id}
+
+    def _spawn_action(self, action_id: str, incident: dict[str, Any],
+                      diagnosis: dict[str, Any] | None) -> None:
+        task = asyncio.create_task(self._run_action(action_id, incident, diagnosis))
+        running = self.__dict__.setdefault("_action_tasks", set())
+        running.add(task)  # held, or the loop may drop it half done
+        task.add_done_callback(running.discard)
 
     # -- redeploying a new build ---------------------------------------------
 
@@ -2193,6 +2211,9 @@ class Supervisor:
         if not self.diagnoser.enabled:
             return {"ok": False, "error": "no LLM configured"}
         note = redact((context or "").strip())[:OPERATOR_CONTEXT_CHARS]
+        spent = self._budget_spent(await asyncio.to_thread(self.store.usage_today))
+        if spent:
+            return {"ok": False, "error": spent}
         if not await asyncio.to_thread(self.store.reserve_call, self.settings.daily_call_limit):
             return {"ok": False, "error": "daily LLM call limit reached"}
         evidence = dict(incident.get("evidence") or {})
@@ -2446,6 +2467,20 @@ class Supervisor:
             model=self.settings.briefing_model or self.settings.model,
             effort="low", max_tokens=2000,
         )
+
+    def _budget_spent(self, usage: dict[str, Any]) -> str:
+        """Why no more diagnosis calls today, or ''. Every diagnosis - an
+        incident's own, or one asked for from the dashboard - asks here.
+
+        A threshold on what has been recorded, not a reservation: calls
+        already in flight finish and are counted after, so the day can end
+        a call or two over. A provider-side credit limit is the absolute one.
+        """
+        cap = self.settings.daily_usd_budget
+        if cap > 0 and usage["cost_usd"] >= cap:
+            return (f"daily LLM budget of ${cap:.2f} is spent "
+                    f"(${usage['cost_usd']:.2f} today)")
+        return ""
 
     def _briefing_budget(self) -> str:
         """'' when a briefing call may be spent, else why not.

@@ -13,6 +13,7 @@ import ast
 import base64
 import dataclasses
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -135,6 +136,7 @@ def a_supervisor(**env):
 class Applying(unittest.TestCase):
     def setUp(self):
         self.supervisor, server = a_supervisor()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(self.supervisor.store.close)
 
@@ -188,6 +190,7 @@ class Applying(unittest.TestCase):
     def test_the_classifier_gets_its_new_backend(self):
         """The key is a secret, from the environment; switching it on is the page's."""
         s, server = a_supervisor(DOCTOR_CLASSIFIER_API_KEY="sk-or-x")
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(s.store.close)
         self.assertIsNone(s.classifier.model)
@@ -227,6 +230,7 @@ class ThroughTheApi(unittest.TestCase):
         self.env = {"DOCTOR_WEB_PASSWORD": "pw", "DOCTOR_WEB_USER": "ana"}
         self.supervisor, server = a_supervisor(**self.env)
         self.env = self.supervisor.test_env
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(self.supervisor.store.close)
         self.restarted = []
@@ -355,7 +359,7 @@ class TheStore(unittest.TestCase):
 
         store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
         self.addCleanup(store.close)
-        with self.assertRaises(Exception):
+        with self.assertRaises(sqlite3.Error):
             store.save_settings({"DOCTOR_CPU_THRESHOLD": "40", "DOCTOR_EFFORT": object()})
         self.assertEqual(store.saved_settings(), {})
         self.assertEqual(store.setting_changes(), [])

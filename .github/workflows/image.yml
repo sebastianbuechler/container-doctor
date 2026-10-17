@@ -19,5 +19,11 @@ permissions:
   packages: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/tests.yml
+  proxy:
+    uses: ./.github/workflows/proxy.yml
+
   build:
+    needs: [tests, proxy]
     uses: ./.github/workflows/build.yml

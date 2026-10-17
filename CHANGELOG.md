@@ -33,8 +33,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`redis://:pass@host`).
 - Container command lines, entrypoints and health-check commands are
   sanitised before they are stored (sensitive option values kept as a hash),
-  and the ones already stored are scrubbed on the first start after
-  upgrading. Data captured before - in backups, or already sent to an LLM
+  and on the first start after upgrading the stored command lines, change
+  timeline, incident evidence and LLM request log are run through the new
+  redaction. Data captured before - in backups, or already sent to an LLM
   provider - is not affected: rotate credentials if real ones were captured.
 - The `doctor-smart` sidecar in `compose.example.yaml` is opt-in, behind the
   Compose profile `smart`, since it has raw disk access and `CAP_SYS_ADMIN`.

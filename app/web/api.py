@@ -414,14 +414,23 @@ def build_app(supervisor: Supervisor, settings: Settings,
         return require_writer(request)
 
     def refuse_cross_site(request: Request) -> None:
+        """A write whose Origin is not this site's - scheme, host and port -
+        is refused. "null" (a sandboxed frame, a file) is never this site.
+        Without Origin, a browser's Sec-Fetch-Site still says cross-site;
+        with neither, the client is not a browser and carries no one's
+        cached credentials, so it is let through to authenticate."""
         origin = request.headers.get("origin")
         if origin:
-            allowed = {request.headers.get("host", "")}
+            host = request.headers.get("host", "")
+            schemes = {request.url.scheme,
+                       request.headers.get("x-forwarded-proto", "").split(",")[0].strip()}
+            allowed = {f"{scheme}://{host}" for scheme in schemes if scheme}
             if settings.public_url:
-                allowed.add(urlparse(settings.public_url).netloc)
-            if urlparse(origin).netloc not in allowed:
+                public = urlparse(settings.public_url)
+                allowed.add(f"{public.scheme}://{public.netloc}")
+            if origin.rstrip("/").lower() not in {a.lower() for a in allowed}:
                 raise HTTPException(status_code=403, detail="cross-site request refused")
-        elif request.headers.get("sec-fetch-site", "") == "cross-site":
+        elif request.headers.get("sec-fetch-site", "") in ("cross-site", "same-site"):
             raise HTTPException(status_code=403, detail="cross-site request refused")
 
     offline_csp = _offline_csp()

@@ -1,4 +1,6 @@
-FROM python:3.14.8-slim-trixie
+# Pinned to a digest, so a rebuild of the same commit gets the same base;
+# Dependabot moves the tag and the digest together.
+FROM python:3.14.8-slim-trixie@sha256:a2b82f3c48559aa0a8446d9af49826b6e2b2016f4cd2afabfe6013ec53729170
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -11,6 +13,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
+COPY LICENSE ./
 
 # Talks to Docker over TCP, so it needs neither root nor a socket mount.
 # compose.example.yaml sets `user:` from DOCTOR_UID and DOCTOR_GID, so this is

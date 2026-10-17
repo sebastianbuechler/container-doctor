@@ -48,8 +48,20 @@ def make_settings(**overrides: str) -> Settings:
                 os.environ[key] = value
 
 
+# Every store a test makes, closed when the module's tests are done: most
+# tests here make one in passing and would otherwise leave it open.
+_STORES: list[Store] = []
+
+
 def make_store() -> Store:
-    return Store(os.path.join(tempfile.mkdtemp(), "test.db"))
+    store = Store(os.path.join(tempfile.mkdtemp(), "test.db"))
+    _STORES.append(store)
+    return store
+
+
+def tearDownModule() -> None:
+    for store in _STORES:
+        store.close()
 
 
 class RedactionTests(unittest.TestCase):

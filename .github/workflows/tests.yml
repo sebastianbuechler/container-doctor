@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # image.yml and release.yml run it first: no image is published from a
+  # commit whose tests fail.
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -11,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       # Test on the Python the image ships, read from the Dockerfile's base
       # image so a Dependabot bump there moves CI along with it.
       - name: Read the image's Python version
@@ -20,7 +23,7 @@ jobs:
           version=$(sed -nE 's/^FROM python:([0-9]+\.[0-9]+).*/\1/p' Dockerfile)
           test -n "$version" || { echo "::error::No python base image in Dockerfile"; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: ${{ steps.python.outputs.version }}
           cache: pip

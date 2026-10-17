@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from datetime import datetime, timezone
@@ -499,6 +500,8 @@ def _coerce(raw: dict[str, Any]) -> dict[str, Any]:
     try:
         confidence = float(raw.get("confidence", 0.0))
     except (TypeError, ValueError):
+        confidence = 0.0
+    if not math.isfinite(confidence):  # "NaN" compares false with everything
         confidence = 0.0
 
     severity = str(raw.get("severity", "warning"))

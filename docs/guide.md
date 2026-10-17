@@ -2025,8 +2025,10 @@ anything whose logs should not leave your network.
 
 Container command lines, entrypoints and health-check commands are sanitised
 the same way before they are stored, with the values of sensitive options kept
-only as a hash; the first start after upgrading scrubs the ones already
-stored. That does not reach data captured before: backups of the database, or
+only as a hash; the first start after upgrading runs what is already stored -
+those command lines, the change timeline, incident evidence and the LLM
+request log - through today's redaction. That does not reach data captured
+before elsewhere: backups of the database, or
 requests already sent to an LLM provider. If real credentials were captured,
 rotate them.
 
@@ -2053,7 +2055,9 @@ the port as `127.0.0.1:8080:8080` so only the proxy reaches it.
   Basic-auth password with any request to the site, a form on another site's
   page included; this is what stops that page from approving an action.
 - **Password guessing.** After 10 wrong passwords within 5 minutes, a client
-  gets `429` for the rest of that window.
+  gets `429` for the rest of that window. A client is the address in
+  `X-Real-Ip` when a reverse proxy sets it, else the connection's; behind a
+  proxy that sets neither, every browser counts as one client.
 - **Sessions.** OIDC sessions are signed with `DOCTOR_SESSION_SECRET`, or with
   a secret generated once and kept in `/data/session_secret` (mode `0600`).
 - **Headers.** Every response carries a `Content-Security-Policy` that allows
@@ -2181,3 +2185,6 @@ backend restarts, mean the settle window is too short for that stack: raise
 **A pending action never runs.** Its `reason` in the action log says why —
 usually a circuit breaker or a confidence below the threshold. That's the system
 working; deal with the underlying problem rather than raising the limits.
+Approving it yourself runs it regardless: the circuit breaker and the cooldown
+stop the doctor repeating itself, not you. An action runs at most once, however
+many times it is approved, and the approver is recorded as its decider.
