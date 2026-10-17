@@ -345,8 +345,6 @@ class Settings:
     ntfy_topic: str = setting("DOCTOR_NTFY_TOPIC", "container-doctor")
     # Access token for a protected ntfy topic.
     ntfy_token: str = setting("DOCTOR_NTFY_TOKEN", "", secret=True)
-    # Not read at present: each notification's priority follows its severity.
-    ntfy_priority: str = setting("DOCTOR_NTFY_PRIORITY", "default")
 
     # Address and port the dashboard listens on inside the container.
     web_host: str = setting("DOCTOR_WEB_HOST", "0.0.0.0", env_only=True)
