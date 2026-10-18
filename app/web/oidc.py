@@ -1,9 +1,10 @@
-"""OIDC login, against Pocket ID or any provider with discovery and PKCE.
+"""OIDC login, against any provider with discovery and PKCE (Pocket ID,
+Authentik, Keycloak, ...).
 
 The doctor is its own OIDC client rather than trusting a header set by the
-reverse proxy. It shares `reverse_proxy_bridge` with every other published
-service, so a header is only as trustworthy as every container on that
-network - and this one can restart containers.
+reverse proxy. A reverse proxy usually shares a network with every other
+published service, so a header is only as trustworthy as every container on
+that network - and this one can restart containers.
 
 What the provider is asked to prove, and what is checked here:
 
@@ -41,10 +42,11 @@ from cryptography.fernet import Fernet, InvalidToken
 from ..config import Settings
 from . import devices
 
-# Whichever HTTP library Authlib settled on: httpx2 when installed, httpx
-# otherwise. Catching plain httpx misses the former's errors.
+# Whichever HTTP library Authlib settles on: httpx2 when installed, httpx
+# otherwise - the same choice Authlib makes. Catching plain httpx misses the
+# former's errors.
 try:
-    from authlib.integrations.httpx_client._compat import httpx2 as oauth_http
+    import httpx2 as oauth_http
 except ImportError:  # an Authlib from before httpx2
     import httpx as oauth_http
 

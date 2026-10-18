@@ -57,7 +57,9 @@ model is one class in `app/decision.py` behind the same `DecisionModel`
 protocol.
 
 **Cost, and the brakes on it.** Jev bills input at $0.042 per million tokens,
-and its output is free. At about 3,000 tokens a call, a call costs roughly
+and its output is free (as of October 2026 — check the model's page, prices
+change often; `DOCTOR_CLASSIFIER_PRICE_PER_MTOK` follows it). At about 3,000
+tokens a call, a call costs roughly
 $0.00013; 200 calls a day is under $0.03. The brakes:
 
 - A verdict is cached against the signal for `DOCTOR_CLASSIFIER_CACHE_HOURS`

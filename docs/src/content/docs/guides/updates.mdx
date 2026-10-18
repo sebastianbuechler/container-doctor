@@ -89,8 +89,8 @@ What it cannot answer, it says rather than assumes:
 | `denied` | A private registry. Needs credentials the doctor does not hold, and is **not** counted as up to date |
 | `unknown` | Unreachable, rate-limited, or the image was never pulled from a registry |
 
-**This needs `IMAGES=1` on the socket proxy**, which is now the default in the
-bundled one. It is a read-only grant and exposes nothing that inspecting a
+**This needs `IMAGES=1` on the socket proxy**, which the bundled one
+grants. It is a read-only grant and exposes nothing that inspecting a
 container — long since permitted — does not; `POST=0` is what keeps it from
 meaning pull or prune. Set `DOCTOR_PROXY_ALLOW_IMAGES=0` to take it back, and
 the panel says so once instead of repeating the same sentence against thirty
@@ -208,4 +208,4 @@ Portainer behaviours behind it:
 A stack without its `DEPLOY_WEBHOOK_*` secret is skipped by the workflow
 with a notice, so the run is green but nothing changed; the check afterwards
 reports that. The doctor never redeploys its own stack: it would replace itself
-mid-run. Its image workflow deploys it.
+mid-run. Redeploy it the way you deployed it.

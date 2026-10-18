@@ -230,6 +230,7 @@ class AgainstTheApi(unittest.TestCase):
     def test_one_round_trip(self):
         server = HTTPServer(("127.0.0.1", 0), _Decisions)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
         self.addCleanup(store.close)
@@ -276,6 +277,7 @@ class ThroughThePipeline(unittest.TestCase):
 
         self.server = HTTPServer(("127.0.0.1", 0), _VersionOnly)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
         previous = dict(os.environ)
         os.environ.update(DOCTOR_DATA_DIR=tempfile.mkdtemp(), ANTHROPIC_API_KEY="",

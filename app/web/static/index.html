@@ -43,10 +43,13 @@
   <div class="signin-card">
     <img class="signin-mark" src="/static/icon.svg" alt="" width="56" height="56">
     <h2>Container Doctor</h2>
-    <a class="btn btn-primary signin-btn" href="/auth/login">Sign in with Pocket ID</a>
+    <a class="btn btn-primary signin-btn" href="/auth/login">Sign in</a>
+    <p class="signin-setup" id="signin-setup" hidden>No sign-in is configured. Set
+      <code>DOCTOR_WEB_PASSWORD</code>, or configure OIDC, in the stack environment
+      and restart the doctor.</p>
     <p class="provider-status" id="provider-status" data-state="checking" role="status" hidden>
       <span class="provider-dot" aria-hidden="true"></span>
-      <span id="provider-status-text">Checking Pocket ID…</span>
+      <span id="provider-status-text">Checking the identity provider…</span>
     </p>
   </div>
 </section>

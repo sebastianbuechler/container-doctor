@@ -27,16 +27,26 @@ import time
 import urllib.request
 from pathlib import Path
 
+from demo.serve import PASSWORD
+
 ROOT = Path(__file__).resolve().parents[1]
 PORT = 8090
 BASE = f"http://127.0.0.1:{PORT}"
-AUTH = "Basic " + base64.b64encode(b"doctor:demo").decode()
+AUTH = "Basic " + base64.b64encode(f"doctor:{PASSWORD}".encode()).decode()
 
 
-def get(path: str):
-    request = urllib.request.Request(BASE + path, headers={"Authorization": AUTH})
+def get(path: str, method: str = "GET"):
+    request = urllib.request.Request(BASE + path, method=method, headers={"Authorization": AUTH})
     with urllib.request.urlopen(request, timeout=10) as response:
         return json.load(response)
+
+
+def briefed() -> bool:
+    """Written from the facts as they are now, every section and the top line."""
+    briefing = get("/api/briefing")
+    return (not briefing.get("generating") and briefing.get("overall") is not None
+            and not briefing.get("overall_stale")
+            and not any(s.get("stale") for s in briefing["sections"].values()))
 
 
 def ready() -> bool:
@@ -66,13 +76,17 @@ def main() -> None:
             if time.monotonic() > deadline or server.poll() is not None:
                 sys.exit("the demo did not get ready in three minutes")
             time.sleep(3)
-        while get("/api/state").get("poll_interval_seconds", 0) < 900:
-            time.sleep(2)  # until the doctor has slowed down; see serve.py
-        time.sleep(3)
+        while not get("/demo-settled")["settled"]:
+            time.sleep(2)  # until the quick polls are over; see serve.py
+        get("/api/briefing/refresh", method="POST")  # what the last polls changed
+        while not briefed():
+            if time.monotonic() > deadline + 120:
+                sys.exit("the briefing did not catch up")
+            time.sleep(2)
         node_path = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True).stdout.strip()
         out = work / "out"
         subprocess.run(["node", str(ROOT / "demo" / "record.cjs"), BASE, str(out)], check=True,
-                       env={**os.environ, "NODE_PATH": node_path})
+                       env={**os.environ, "NODE_PATH": node_path, "DEMO_PASSWORD": PASSWORD})
     finally:
         server.terminate()
         server.wait(timeout=20)

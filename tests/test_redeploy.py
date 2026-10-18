@@ -269,6 +269,7 @@ class Redeploying(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), _VersionOnly)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         previous = dict(os.environ)
         os.environ.update(DOCTOR_DATA_DIR=tempfile.mkdtemp(), ANTHROPIC_API_KEY="",
@@ -317,7 +318,7 @@ class Redeploying(unittest.TestCase):
                                       mock.AsyncMock(return_value=(conclusion, ""))), \
                     mock.patch.object(sup, "_fresh_poll", fresh_poll), \
                     mock.patch.object(sup, "_recheck_images", recheck):
-                result = await sup.redeploy("radarr", actor="sebastian")
+                result = await sup.redeploy("radarr", actor="alex")
                 during = dict(sup.snapshot()["image_updates"]["redeploying"])
                 for _ in range(50):
                     await asyncio.sleep(0.01)
@@ -338,7 +339,7 @@ class Redeploying(unittest.TestCase):
         self.assertEqual(actions[0]["status"], "succeeded")
         self.assertIn("now running the new build", actions[0]["result"])
         self.assertIn("actions/runs/42", actions[0]["result"])
-        self.assertEqual(actions[0]["decided_by"], "user:sebastian")
+        self.assertEqual(actions[0]["decided_by"], "user:alex")
         self.assertEqual(self.supervisor.snapshot()["image_updates"]["redeploying"], {})
 
     def test_a_redeploy_that_left_the_old_build_running_is_a_failure(self):

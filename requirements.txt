@@ -5,8 +5,15 @@ fastapi==0.143.1
 uvicorn[standard]==0.54.0
 pydantic==2.14.1
 httpx==0.28.1
-PyYAML==6.0.3
 # OIDC sign-in: Authlib does discovery, JWKS and token validation; itsdangerous
 # signs the session cookie Starlette's SessionMiddleware sets.
 Authlib==1.9.1
 itsdangerous==2.2.0
+# Imported directly, though other packages bring them too: declared so an
+# upgrade of those cannot remove them silently. cryptography encrypts the
+# stored refresh tokens; httpx2 is the client Authlib uses; starlette is under
+# FastAPI; requests is under the docker SDK.
+cryptography==50.0.2
+httpx2==2.13.1
+starlette==1.8.0
+requests==2.34.2

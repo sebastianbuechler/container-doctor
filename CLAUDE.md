@@ -8,7 +8,7 @@ host the real doctor runs against for the docs' screenshots and live demo.
 ## Commands
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt   # dev adds what the tests need
 python -m unittest discover -s tests          # all tests, no Docker needed
 python scripts/gen_docs.py                    # regenerate the env var reference
 python -m demo.record                         # retake screenshots, re-record the demo

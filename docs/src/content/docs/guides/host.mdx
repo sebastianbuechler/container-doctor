@@ -25,8 +25,9 @@ Docker already mounts read-only.
   the kernel and the model. When the host does not provide them, the page says
   so rather than showing zeros. Pressure arrived in Linux 4.20 and DSM 7 runs
   4.4 on most models, so on a Synology it is usually absent; the page names
-  the kernel it found. Network traffic is not here: a container only
-  sees its own interfaces. SMART data needs raw disk access.
+  the kernel it found. Network traffic is not here: a container only sees its
+  own interfaces. Drive health is on the Storage page; see
+  [Drive health](/container-doctor/guides/storage/#drive-health).
 
 `DOCTOR_PROC_PATH=off` turns the page and its rules off.
 

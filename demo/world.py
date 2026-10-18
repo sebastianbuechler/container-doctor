@@ -100,7 +100,7 @@ def _boxes() -> list[Box]:
             networks=("paperless_default", "proxy"), logs="paperless",
             depends_on="db:service_healthy:false,broker:service_started:false",
             source="https://github.com/paperless-ngx/paperless-ngx"),
-        Box("paperless-db", "paperless", "db", "postgres:16.4", 4.8, 228 * MIB, 256 * MIB,
+        Box("paperless-db", "paperless", "db", "postgres:16.4", 4.8, 218 * MIB, 256 * MIB,
             health="unhealthy", created=ago(days=2, hours=5), started=ago(hours=6, minutes=12),
             restart_count=1, networks=("paperless_default",), logs="postgres",
             labels={"doctor.mode": "suggest"}),

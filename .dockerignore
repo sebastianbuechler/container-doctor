@@ -1,8 +1,17 @@
-tests/
+# Only requirements.txt, app/ and LICENSE are copied into the image; the rest
+# is kept out of the build context too.
+.git
+.github
+.env
+.env.*
+!.env.example
+data/
 demo/
 docs/
-README.md
-.env
-.env.example
+tests/
 **/__pycache__/
 **/*.pyc
+.venv/
+venv/
+*.db
+*.db-*

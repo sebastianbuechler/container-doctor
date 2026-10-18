@@ -16,8 +16,8 @@ labels:
 ```
 
 Useful ones: `doctor.enable=false` on anything where a restart is
-disruptive or meaningless, and `doctor.mode=auto` on the stateless web apps
-(`it-tools`, `stirling-pdf`, `openspeedtest`) where a restart is cheap.
+disruptive or meaningless, and `doctor.mode=auto` on stateless web apps - a
+PDF tool, a speed test, a static site - where a restart is cheap.
 
 To flip the default to opt-in, set `DOCTOR_REQUIRE_OPT_IN=true`; only containers
 with `doctor.enable=true` are then watched.

@@ -13,6 +13,7 @@ import ast
 import base64
 import dataclasses
 import os
+import sqlite3
 import tempfile
 import threading
 import unittest
@@ -135,6 +136,7 @@ def a_supervisor(**env):
 class Applying(unittest.TestCase):
     def setUp(self):
         self.supervisor, server = a_supervisor()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(self.supervisor.store.close)
 
@@ -169,8 +171,8 @@ class Applying(unittest.TestCase):
 
     def test_only_restart_settings_changes_nothing(self):
         old = self.supervisor.settings
-        result = self.apply(docker_host="tcp://elsewhere:2375")
-        self.assertEqual(result, {"applied": [], "restart": ["docker_host"]})
+        result = self.apply(poll_concurrency=2)
+        self.assertEqual(result, {"applied": [], "restart": ["poll_concurrency"]})
         self.assertIs(self.supervisor.settings, old)
 
     def test_what_was_built_from_them_is_built_again(self):
@@ -188,6 +190,7 @@ class Applying(unittest.TestCase):
     def test_the_classifier_gets_its_new_backend(self):
         """The key is a secret, from the environment; switching it on is the page's."""
         s, server = a_supervisor(DOCTOR_CLASSIFIER_API_KEY="sk-or-x")
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(s.store.close)
         self.assertIsNone(s.classifier.model)
@@ -227,6 +230,7 @@ class ThroughTheApi(unittest.TestCase):
         self.env = {"DOCTOR_WEB_PASSWORD": "pw", "DOCTOR_WEB_USER": "ana"}
         self.supervisor, server = a_supervisor(**self.env)
         self.env = self.supervisor.test_env
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         self.addCleanup(self.supervisor.store.close)
         self.restarted = []
@@ -328,11 +332,10 @@ class ThroughTheApi(unittest.TestCase):
         self.assertEqual(self.supervisor.settings.cpu_threshold_pct, 85.0)
 
     def test_a_value_that_adds_a_problem_is_refused(self):
-        """Auto mode with no sign-in configured: the file is refused, whole."""
-        self.patch_env(DOCTOR_WEB_PASSWORD="")
-        response = self.importing({"DOCTOR_MODE": "auto", "DOCTOR_CPU_THRESHOLD": "40"})
+        """A confidence no diagnosis can reach: the file is refused, whole."""
+        response = self.importing({"DOCTOR_MIN_CONFIDENCE": "2", "DOCTOR_CPU_THRESHOLD": "40"})
         self.assertEqual(response.status_code, 422)
-        self.assertIn("No sign-in configured", response.json()["detail"])
+        self.assertIn("DOCTOR_MIN_CONFIDENCE", response.json()["detail"])
         self.assertEqual(self.supervisor.store.saved_settings(), {})
 
     def test_another_file_is_refused(self):
@@ -356,7 +359,7 @@ class TheStore(unittest.TestCase):
 
         store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
         self.addCleanup(store.close)
-        with self.assertRaises(Exception):
+        with self.assertRaises(sqlite3.Error):
             store.save_settings({"DOCTOR_CPU_THRESHOLD": "40", "DOCTOR_EFFORT": object()})
         self.assertEqual(store.saved_settings(), {})
         self.assertEqual(store.setting_changes(), [])

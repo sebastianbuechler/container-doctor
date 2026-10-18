@@ -12,14 +12,22 @@ something to show at once. Nothing it does reaches outside the process.
 from __future__ import annotations
 
 import argparse
+import asyncio
+import logging
 import os
 import shutil
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+
+# Long enough not to earn the dashboard's short-password notice.
+PASSWORD = "demo-password-not-secret"
+# Polls run this often while the scenario plays out, then stop.
+QUICK_POLLS, QUICK_SECONDS = 16, 5
 
 
 def environment(data: Path, port: int, fake_root: Path) -> dict[str, str]:
@@ -27,12 +35,11 @@ def environment(data: Path, port: int, fake_root: Path) -> dict[str, str]:
         "DOCTOR_DATA_DIR": str(data),
         "DOCTOR_WEB_HOST": "127.0.0.1",
         "DOCTOR_WEB_PORT": str(port),
-        "DOCTOR_WEB_PASSWORD": "demo",
+        "DOCTOR_WEB_PASSWORD": PASSWORD,
         "DOCTOR_MODE": "suggest",
         "DOCTOR_HOST_NAME": "atlas",
         "DOCTOR_DOCKER_MANAGER": "Dockge",
         "DOCTOR_DEPLOY_METHOD": "",
-        "DOCTOR_POLL_INTERVAL": "5",
         "DOCTOR_PROC_PATH": str(fake_root / "proc"),
         "DOCTOR_SYSFS_PATH": str(fake_root / "sys"),
         "DOCTOR_MDSTAT_PATH": str(fake_root / "proc" / "mdstat"),
@@ -44,7 +51,7 @@ def environment(data: Path, port: int, fake_root: Path) -> dict[str, str]:
         "DOCTOR_IMAGE_CHECK_HOURS": "12",
         "DOCTOR_RELEASE_NOTES": "true",
         "ANTHROPIC_API_KEY": "demo",
-        "DOCTOR_MODEL": "claude-opus-5",
+        "DOCTOR_MODEL": "claude-opus-5-5",
         "DOCTOR_LOG_LEVEL": "INFO",
         "DOCKER_HOST": "tcp://doctor-socket-proxy:2375",
     }
@@ -73,6 +80,8 @@ def main() -> None:
 
     from . import fakes, model, seed
 
+    settled = threading.Event()
+
     seed.seed(str(data / "doctor.db"))
 
     host = fakes.FakeHost(fake_root)
@@ -84,7 +93,6 @@ def main() -> None:
             self._env_key = env_key
             self._client = fakes.FakeDockerPy()
             self._events_thread = None
-            import threading
             self._stop = threading.Event()
 
     supervisor_module.DockerClient = DemoDocker
@@ -97,19 +105,27 @@ def main() -> None:
         return fakes.preflight_results(preflight)
     supervisor_module.probe_endpoint = probe_endpoint
 
-    polls = 0
-    original_poll = supervisor_module.Supervisor._poll_once
+    log = logging.getLogger("demo")
 
-    async def poll_once(self):
-        nonlocal polls
-        polls += 1
-        fakes.evolve(polls)
-        await original_poll(self)
-        if polls == 16:
-            # The scenario has played out; poll rarely from here, so the
-            # screenshots are not taken mid-poll.
-            object.__setattr__(self.settings, "poll_interval_seconds", 900)
-    supervisor_module.Supervisor._poll_once = poll_once
+    async def poll_loop(self):
+        """The scenario in a minute and a half: quick polls while paperless
+        falls over and the rules catch it, then none, so nothing moves while
+        the screenshots are taken - and the settings stay as configured."""
+        for n in range(1, QUICK_POLLS + 1):
+            fakes.evolve(n)
+            self._polling = True
+            self.broadcast("poll", {"polling": True})
+            try:
+                await self._poll_once()
+            except Exception:
+                log.exception("poll failed")
+            if self._polling:
+                self._polling = False
+                self._poll_progress = None
+                self.broadcast("poll", {"polling": False})
+            await asyncio.sleep(QUICK_SECONDS)
+        settled.set()
+    supervisor_module.Supervisor._poll_loop = poll_loop
 
     original_start = supervisor_module.Supervisor.start
 
@@ -128,11 +144,18 @@ def main() -> None:
     def smart_metrics():
         return PlainTextResponse(fakes.smart_metrics())
 
-    # The routes the app registered first include a catch-all for the
-    # dashboard; the exporter route has to answer before it.
-    app.router.routes.insert(0, app.router.routes.pop())
+    @app.get("/demo-settled", include_in_schema=False)
+    def demo_settled():
+        """Whether the quick polls are over; the recorder waits for it."""
+        return {"settled": settled.is_set()}
 
-    print(f"demo: http://127.0.0.1:{args.port}  (data in {work})", flush=True)
+    # The routes the app registered first include a catch-all for the
+    # dashboard; these two have to answer before it.
+    for _ in range(2):
+        app.router.routes.insert(0, app.router.routes.pop())
+
+    print(f"demo: http://127.0.0.1:{args.port}, user doctor, password {PASSWORD}  (data in {work})",
+          flush=True)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", access_log=False)
 
 

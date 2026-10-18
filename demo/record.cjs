@@ -4,7 +4,7 @@
 //   python -m demo.record            (starts the demo, runs this, stops it)
 //
 // Needs Playwright with Chromium. Run directly against a demo already running:
-//   NODE_PATH=$(npm root -g) node demo/record.cjs http://127.0.0.1:8090 OUT_DIR
+//   DEMO_PASSWORD=... NODE_PATH=$(npm root -g) node demo/record.cjs http://127.0.0.1:8090 OUT_DIR
 
 const fs = require("fs");
 const path = require("path");
@@ -12,7 +12,7 @@ const { chromium } = require("playwright");
 
 const BASE = process.argv[2] || "http://127.0.0.1:8090";
 const OUT = process.argv[3] || path.join(__dirname, "out");
-const AUTH = "Basic " + Buffer.from("doctor:demo").toString("base64");
+const AUTH = "Basic " + Buffer.from(`doctor:${process.env.DEMO_PASSWORD}`).toString("base64");
 const DESKTOP = { width: 1280, height: 820 };
 const PHONE = { width: 390, height: 844 };
 

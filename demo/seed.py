@@ -19,7 +19,7 @@ from .world import BOXES, MIB, STARTED, iso
 
 DAYS = 14
 SERIALS = {"sda": "WD-WX12345", "sdb": "WD-WX67890", "nvme0n1": "S64ANS0T123456"}
-MODEL = "claude-opus-5"
+MODEL = "claude-opus-5-5"
 
 
 class _Clock(datetime):

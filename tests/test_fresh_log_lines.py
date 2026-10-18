@@ -53,6 +53,7 @@ class AFatalCountsOnce(unittest.TestCase):
 
     def test_a_restart_of_the_doctor_remembers_what_it_read(self):
         store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
+        self.addCleanup(store.close)
         first = Detector(Settings())
         kinds(first, TIMEOUT)
         store.save_log_marks(first.drain_log_marks())

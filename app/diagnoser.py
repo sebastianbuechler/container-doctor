@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import re
 import time
 from datetime import datetime, timezone
@@ -28,10 +29,14 @@ log = logging.getLogger(__name__)
 # USD per million tokens (input, output). Used for the budget meter only -
 # unknown models simply record zero cost.
 MODEL_PRICES: dict[str, tuple[float, float]] = {
+    "claude-fable-5": (10.00, 50.00),
+    "claude-opus-5-5": (4.00, 20.00),
     "claude-opus-5": (5.00, 25.00),
     "claude-opus-4-8": (5.00, 25.00),
+    "claude-sonnet-5-5": (2.00, 10.00),
     "claude-sonnet-5": (2.00, 10.00),
     "claude-sonnet-4-6": (3.00, 15.00),
+    "claude-haiku-5-5": (0.10, 0.50),
     "claude-haiku-4-5": (1.00, 5.00),
 }
 
@@ -145,10 +150,6 @@ Be specific and brief. `summary` is one sentence, no preamble."""
 # Without a manager or method named: what the tests and the hand-off's
 # defaults read.
 SYSTEM_PROMPT = system_prompt()
-
-
-class BudgetExceeded(Exception):
-    """Raised when today's LLM spend cap has already been reached."""
 
 
 class Diagnoser:
@@ -499,6 +500,8 @@ def _coerce(raw: dict[str, Any]) -> dict[str, Any]:
     try:
         confidence = float(raw.get("confidence", 0.0))
     except (TypeError, ValueError):
+        confidence = 0.0
+    if not math.isfinite(confidence):  # "NaN" compares false with everything
         confidence = 0.0
 
     severity = str(raw.get("severity", "warning"))

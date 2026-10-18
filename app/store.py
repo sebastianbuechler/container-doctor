@@ -16,7 +16,11 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Iterator
 
-from .redact import fingerprint
+from .redact import fingerprint, redact, redact_obj
+
+# PRAGMA user_version once stored data has been through _scrub. Raise it when
+# redaction learns something the rows already kept should be run through.
+SCRUBBED_VERSION = 1
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS incidents (
@@ -416,6 +420,55 @@ class Store:
             "UPDATE incidents SET rule_severity = severity WHERE rule_severity = ''"
         )
         self._rename_host()
+        if self._conn.execute("PRAGMA user_version").fetchone()[0] < SCRUBBED_VERSION:
+            self._scrub()
+            self._conn.execute(f"PRAGMA user_version = {SCRUBBED_VERSION}")
+
+    def _scrub(self) -> None:
+        """Run what is already stored through today's redaction, once.
+
+        Earlier versions kept command lines as given - `--password x` and all
+        - and recognised fewer secret shapes in logs. New rows are written
+        clean; this cleans the old ones. Backups taken before, and whatever a
+        model provider kept of a request, are out of its reach.
+        """
+        def scrub_json(text: str) -> str:
+            try:
+                value = json.loads(text)
+            except (TypeError, ValueError):
+                return redact(text or "")
+            return json.dumps(redact_obj(value), default=str, sort_keys=isinstance(value, dict))
+
+        def rewrite(table: str, key: str, columns: tuple[str, ...], as_json: tuple[str, ...]):
+            have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            columns = tuple(c for c in columns if c in have)
+            if not columns:
+                return
+            rows = self._conn.execute(
+                f"SELECT {key}, {', '.join(columns)} FROM {table}").fetchall()
+            for row in rows:
+                values = [(scrub_json(row[c]) if c in as_json else redact(row[c] or ""))
+                          if row[c] is not None else None for c in columns]
+                if values != [row[c] for c in columns]:
+                    self._conn.execute(
+                        f"UPDATE {table} SET {', '.join(f'{c} = ?' for c in columns)} "
+                        f"WHERE {key} = ?", (*values, row[key]))
+
+        for row in self._conn.execute(
+                "SELECT name, config_json FROM container_state WHERE config_json != ''").fetchall():
+            try:
+                config = json.loads(row["config_json"])
+            except ValueError:
+                continue
+            for field in ("cmd", "entrypoint", "healthcheck"):
+                if isinstance(config.get(field), str):
+                    config[field] = redact(config[field])
+            self._conn.execute("UPDATE container_state SET config_json = ? WHERE name = ?",
+                               (json.dumps(config, sort_keys=True), row["name"]))
+        rewrite("container_changes", "id", ("summary", "detail_json"), ("detail_json",))
+        rewrite("incidents", "id", ("summary", "evidence_json"), ("evidence_json",))
+        rewrite("incident_occurrences", "id", ("summary", "lines_json"), ("lines_json",))
+        rewrite("llm_calls", "id", ("request_json", "response_text"), ("request_json",))
 
     # The host's own incidents and changes were filed under host:nas.
     OLD_HOST_ID, HOST_ID = "host:nas", "host:system"
@@ -1064,6 +1117,22 @@ class Store:
             )
             self._conn.commit()
 
+    def take_pending_action(self, action_id: str, status: str, result: str = "", *,
+                            decided_by: str | None = None) -> bool:
+        """Move a pending action on - to `executing` or `rejected` - if it is
+        still pending; False when something else got there first. The one way
+        out of pending a person takes, so approving twice, or approving and
+        rejecting at once, runs an action at most once."""
+        with self._lock:
+            moved = self._conn.execute(
+                """UPDATE actions SET status=?, result=?, executed_at=?,
+                     decided_by=COALESCE(?, decided_by)
+                   WHERE id=? AND status='pending'""",
+                (status, result[:2000], utcnow(), decided_by, action_id),
+            ).rowcount
+            self._conn.commit()
+        return moved == 1
+
     def get_action(self, action_id: str) -> dict | None:
         with self._read() as conn:
             row = conn.execute("SELECT * FROM actions WHERE id=?", (action_id,)).fetchone()
@@ -1377,6 +1446,9 @@ class Store:
         a repeat of the same kind counts up the last row instead.
         """
         at = at or utcnow()
+        # Scrubbed here too: a change's summary and detail quote configuration,
+        # and this is the last point before it is kept.
+        summary, detail = redact(summary), redact_obj(detail)
         with self._lock:
             if fold_minutes > 0:
                 cutoff = (_parse_iso(at) or datetime.now(timezone.utc)) - timedelta(minutes=fold_minutes)

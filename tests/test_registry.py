@@ -179,6 +179,7 @@ class StubRegistry:
 
     def stop(self):
         self.server.shutdown()
+        self.server.server_close()
 
 
 class AskingTheRegistry(unittest.TestCase):
@@ -303,6 +304,7 @@ class ThroughTheSupervisor(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
 
     def setUp(self):
         FakeDaemon.images = {}

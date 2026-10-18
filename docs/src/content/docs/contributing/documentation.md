@@ -64,7 +64,7 @@ demo shows the new page with the old data.
 
 To change the scenario - containers, incidents, what the model says - edit
 `demo/world.py`, `demo/seed.py` and `demo/model.py`. To look at it live:
-`python -m demo.serve`, then open `http://127.0.0.1:8090` and sign in with the password `demo`.
+`python -m demo.serve`, then open `http://127.0.0.1:8090` and sign in as `doctor` with the password it prints.
 
 Recording needs Playwright with Chromium (`npm i -g playwright`, then
 `npx playwright install chromium`) and the docs' dependencies (`cd docs && npm ci`).

@@ -361,6 +361,7 @@ class TheBudgetReserve(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), Daemon)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         previous = dict(os.environ)
         os.environ.update(DOCTOR_DATA_DIR=tempfile.mkdtemp(), ANTHROPIC_API_KEY="sk-ant-x",

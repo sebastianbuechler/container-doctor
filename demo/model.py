@@ -13,7 +13,8 @@ DIAGNOSES = {
     ("paperless-db", "unhealthy"): {
         "summary": "Postgres for paperless keeps failing its health check after being "
                    "killed at its 256 MiB memory limit; a restart clears the stuck recovery.",
-        "root_cause": "paperless-db runs with mem_limit 256m and sits at 228 MiB, peaking at 254 MiB every night at 02:00. The log shows "
+        "root_cause": "paperless-db runs with mem_limit 256m and sits at 218 MiB, peaking at "
+                      "254 MiB every night at 02:00. The log shows "
                       "\"database system was not properly shut down; automatic recovery in "
                       "progress\" after the last restart: the kernel killed postgres at the "
                       "limit during the nightly index rebuild, and recovery has stalled since "
@@ -31,7 +32,7 @@ DIAGNOSES = {
         ],
         "evidence_used": [
             "health: unhealthy, failing streak 5",
-            "memory: 89% of 256 MiB, 254 MiB peak at 02:00",
+            "memory: 85% of 256 MiB, 254 MiB peak at 02:00",
             "LOG:  database system was not properly shut down; automatic recovery in progress",
         ],
     },

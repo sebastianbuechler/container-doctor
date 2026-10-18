@@ -149,6 +149,7 @@ class ThroughTheSupervisor(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), Daemon)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
         previous = dict(os.environ)
         os.environ.update(DOCTOR_DATA_DIR=tempfile.mkdtemp(), ANTHROPIC_API_KEY="",
@@ -183,13 +184,18 @@ class HandoffSupervisor(StubSupervisor):
 
 @NEEDS_APP
 class TheEndpoint(unittest.TestCase):
-    def client(self, **env):
+    def client(self, signed_in=True):
         from fastapi.testclient import TestClient
 
         from app.web.api import build_app
 
-        settings = make_settings(DOCTOR_OIDC_ISSUER="", **env)
-        return TestClient(build_app(HandoffSupervisor(), settings))
+        settings = make_settings(DOCTOR_OIDC_ISSUER="", DOCTOR_WEB_PASSWORD="pw",
+                                 DOCTOR_WEB_USER="doctor")
+        client = TestClient(build_app(HandoffSupervisor(), settings))
+        if signed_in:
+            client.auth = ("doctor", "pw")
+        self.addCleanup(client.close)
+        return client
 
     def test_it_is_markdown(self):
         response = self.client().get("/api/incidents/abc/handoff")
@@ -207,7 +213,7 @@ class TheEndpoint(unittest.TestCase):
         self.assertEqual(self.client().get("/api/incidents/missing/handoff").status_code, 404)
 
     def test_it_is_checked_like_the_incident_itself(self):
-        client = self.client(DOCTOR_WEB_PASSWORD="pw", DOCTOR_WEB_USER="doctor")
+        client = self.client(signed_in=False)
         self.assertEqual(client.get("/api/incidents/abc/handoff").status_code, 401)
         self.assertEqual(client.get("/api/incidents/abc/handoff", auth=("doctor", "pw")).status_code, 200)
 

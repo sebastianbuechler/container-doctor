@@ -19,7 +19,7 @@ and nothing is answered.
 
 One sample per path per hour, least squares over the last fortnight, and two
 figures that do answer it: a rate and a date. *"/data is filling at 3.7 GiB/day
-— full in about 31 days"* is a decision. *"92% full"* is a shrug.
+— full in about 31 days"* is a decision. *"92% full"* is not.
 
 - **Least squares over the window**, not first-to-last, so a restart that frees a
   few gigabytes bends the line instead of resetting it.
@@ -78,7 +78,10 @@ asleep is skipped rather than woken.
 
 **The sidecar.** Reading SMART takes raw access to the disks, and the doctor
 deliberately has none. A second container in this stack, `doctor-smart`,
-does that and nothing else. It runs the upstream
+does that and nothing else. It is opt-in, behind the Compose profile `smart`:
+start the stack with `docker compose --profile smart up -d`, or set
+`COMPOSE_PROFILES=smart` in the stack environment. Without it the doctor works
+normally and the panel notes that the sidecar is not answering. It runs the upstream
 [`smartctl_exporter`](https://github.com/prometheus-community/smartctl_exporter)
 unchanged, and the doctor reads its metrics page over the internal network.
 It is set up as follows:
@@ -96,7 +99,7 @@ doctor is the containment.
 
 It finds the drives itself: DSM's `sataN` bays and NVMe drives, or `sdX` on
 older models. If they are not found, list them with `DOCTOR_SMART_DEVICES`,
-for example `/dev/sata1;sat /dev/sata2;sat`. `DOCTOR_SMART_URL=` (empty) turns
+for example `/dev/sata1;sat /dev/sata2;sat`. `DOCTOR_SMART_URL=off` turns
 drive health off.
 
 The `sataN` bays are read as SATA (`;sat`), not left to smartctl to guess. DSM
@@ -147,8 +150,7 @@ so once.
 ### Why one volume shows several arrays
 
 On a Synology, SHR on drives of different sizes is not one RAID. DSM cuts every
-drive into
-slices, builds a separate md array across each layer of slices, and joins them
+drive into slices, builds a separate md array across each layer of slices, and joins them
 with LVM into one volume. Seven 6 TB drives and one 3 TB drive make:
 
 | Array | What it is |
@@ -201,4 +203,5 @@ warning and one incident: *Drive 7 has had 40 read errors corrected (32 in md2,
 
 Like `raid_degraded`, these are never acted on. `DOCTOR_SYSFS_PATH` (default
 `/sys`) points elsewhere or, set to `off`, skips all of it; the panel then shows what
-mdstat says. SMART data is out of reach: it needs raw access to the disks.
+mdstat says. SMART data comes from the sidecar instead; see
+[Drive health](#drive-health).

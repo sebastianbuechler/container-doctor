@@ -19,6 +19,12 @@ tell "changed" from "the same", never the value. The key is random and made
 once per install, so a copy of the database is not a table of hashed passwords
 to look values up in. Weak values could still be guessed by someone holding
 both the database and the key file; strong ones cannot.
+
+Command lines - Cmd, Entrypoint and the healthcheck - get the same care, one
+argument at a time: the value of an option named like a secret
+(`--password x`, `--api-key=x`) is kept as a keyed hash, and every other
+argument goes through `redact`. Sanitised before the words are joined, so
+where one argument ends is never lost.
 """
 
 from __future__ import annotations
@@ -27,6 +33,7 @@ import hashlib
 import hmac
 import logging
 import os
+import re
 import secrets
 from typing import Any
 
@@ -92,10 +99,10 @@ def snapshot(attrs: dict[str, Any], key: bytes) -> dict[str, Any]:
     health = config.get("Healthcheck") or {}
     return {
         "env": env,
-        "cmd": _words(config.get("Cmd")),
-        "entrypoint": _words(config.get("Entrypoint")),
+        "cmd": command(key, config.get("Cmd")),
+        "entrypoint": command(key, config.get("Entrypoint")),
         "user": config.get("User") or "",
-        "healthcheck": _words(health.get("Test")),
+        "healthcheck": command(key, health.get("Test")),
         "mem_limit": int(host.get("Memory") or 0),
         "cpus": round(int(host.get("NanoCpus") or 0) / 1e9, 2),
         "shm_size": int(host.get("ShmSize") or 0),
@@ -225,12 +232,45 @@ def _noise(label: str) -> bool:
     return label in _LABEL_NOISE_EXACT or label.startswith(_LABEL_NOISE)
 
 
-def _words(value: Any) -> str:
+# --password, -p? No: a one-letter flag says nothing about its value. An
+# option is a secret's when its name is one: --db-password, --api-key.
+_OPTION = re.compile(r"^(--?[A-Za-z][\w.-]*)(?:=(.*))?$", re.S)
+
+
+def command(key: bytes, value: Any) -> str:
+    """A command line as stored: each argument sanitised, then joined.
+
+    `--password x` and `--password=x` keep the option and hash the value, so
+    a changed password still shows as a changed command line. A shell form
+    (one string, or CMD-SHELL's) is a single argument and goes through
+    `redact`, which knows the same option shapes within a line.
+    """
     if not value:
         return ""
-    if isinstance(value, (list, tuple)):
-        return " ".join(str(v) for v in value)
-    return str(value)
+    words = [str(v) for v in value] if isinstance(value, (list, tuple)) else [str(value)]
+    out: list[str] = []
+    secret_next = False
+    for word in words:
+        if secret_next:
+            secret_next = False
+            if not word.startswith("-"):  # else the option had no value
+                out.append(_hidden(key, word))
+                continue
+        option = _OPTION.match(word)
+        if option and secret_name(option.group(1).lstrip("-")):
+            if option.group(2) is None:
+                out.append(word)
+                secret_next = True
+            else:
+                out.append(f"{option.group(1)}={_hidden(key, option.group(2))}")
+            continue
+        out.append(redact(word))
+    return " ".join(out)
+
+
+def _hidden(key: bytes, value: str) -> str:
+    """A secret argument: enough to tell "changed" from "the same"."""
+    return "[hidden " + hmac.new(key, value.encode(), hashlib.sha256).hexdigest()[:8] + "]"
 
 
 def _show(value: Any) -> str:

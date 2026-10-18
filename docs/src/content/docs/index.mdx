@@ -42,12 +42,12 @@ import Screenshot from '../../components/Screenshot.astro';
     container and nothing that could escape one. No mount of your data.
   </Card>
   <Card title="Secrets stay out" icon="seti:lock">
-    Logs are scrubbed of tokens and keys before anything is stored or sent to a
-    model, and every request it sent can be read back on the dashboard.
+    Logs are scrubbed of tokens and keys, best effort, before anything is
+    stored or sent to a model, and every request it sent can be read back on the dashboard.
   </Card>
   <Card title="Any model" icon="rocket">
     Anthropic or anything OpenAI-compatible - OpenRouter, Gemini, Groq, or a
-    local model. A daily budget hard-stops spend.
+    local model. A daily budget stops new calls.
   </Card>
   <Card title="The whole host" icon="laptop">
     Disks and their fill rate, SMART and RAID, CPU and memory, the network and

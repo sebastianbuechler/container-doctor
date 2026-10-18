@@ -132,7 +132,10 @@ class TheEndpoint(unittest.TestCase):
         self.store = make_store()
         self.addCleanup(self.store.close)
         self.client = TestClient(build_app(StubSupervisor(self.store),
-                                           make_settings(DOCTOR_WEB_PASSWORD="")))
+                                           make_settings(DOCTOR_WEB_PASSWORD="pw",
+                                                         DOCTOR_WEB_USER="doctor")))
+        self.client.auth = ("doctor", "pw")
+        self.addCleanup(self.client.close)
 
     def test_it_serves_the_history_with_the_total(self):
         incident_id = open_probe_incident(self.store)

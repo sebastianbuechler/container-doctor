@@ -7,11 +7,13 @@ import Screenshot from '../../../components/Screenshot.astro';
 
 Every setting can be set in two places: the stack environment (a `.env` file
 next to the compose file, or your Docker manager's environment editor), and
-the dashboard's **Settings** page.
-Use the stack environment for secrets, sign-in and anything
-you want pinned; use the page for the rest - thresholds, mode, the model,
-budgets, the classifier, notifications - where a change is checked before it
-is saved and usually takes effect at once.
+the dashboard's **Settings** page - except a few that only the stack
+environment can set (see
+[What stays in the stack environment](#what-stays-in-the-stack-environment)).
+Use the stack environment for secrets, sign-in and anything you want pinned;
+use the page for the rest - thresholds, mode, the model, budgets, the
+classifier, the notification topic - where a change is checked before it is
+saved and usually takes effect at once.
 
 <Screenshot name="settings" alt="The Settings page: every setting, where its value comes from, and what can be changed here." />
 
@@ -83,11 +85,10 @@ was. Other open tabs refresh their Settings page when it happens.
 A few are read only when the doctor starts, and their editor says *applies on
 restart*:
 
-- the Docker endpoint and its connection pool (`DOCTOR_POLL_CONCURRENCY`)
+- the Docker connection pool (`DOCTOR_POLL_CONCURRENCY`)
 - the Host and RAID detail paths (`DOCTOR_PROC_PATH`, `DOCTOR_SYSFS_PATH`)
 - the LLM provider
 - the internet check interval and the registry check interval
-- sign-in: OIDC, the public URL, session length, web user, password fallback
 
 These show as *after restart: …* until **Restart to apply** stops the doctor;
 Docker's `restart: unless-stopped` starts it again a few seconds later with
@@ -97,8 +98,18 @@ the saved values.
 
 The page never saves:
 
-- **secrets** - API keys, tokens, the web password, the OIDC client secret -
-  nor changes a row about one, such as *Credentials*;
+- **secrets** - API keys, tokens, the web password, the OIDC client secret,
+  the session secret - nor changes a row about one, such as *Credentials*;
+- **where a secret is sent**: the Docker endpoint (`DOCKER_HOST`, from
+  `DOCTOR_DOCKER_HOST`), the OpenAI-compatible base URL
+  (`DOCTOR_OPENAI_BASE_URL`), the classifier's endpoint
+  (`DOCTOR_CLASSIFIER_URL`) and the ntfy server (`DOCTOR_NTFY_URL`). A value
+  saved from the page could otherwise send an API key or token to a host of
+  its choosing. The ntfy topic stays editable;
+- **how sign-in works**: every `DOCTOR_OIDC_*` setting, `DOCTOR_PUBLIC_URL`,
+  `DOCTOR_SESSION_HOURS`, `DOCTOR_WEB_USER` and
+  `DOCTOR_WEB_PASSWORD_FALLBACK`. Whoever can save a setting must not be able
+  to decide who signs in, or where;
 - what is needed before the database opens or the web server starts: the data
   directory, the web address and port, the log level;
 - anything the stack environment already sets, since it would override the page.
@@ -143,7 +154,9 @@ and `true`/`false`.
 ## Who can change settings
 
 Saving, importing, exporting and **Restart to apply** need the same sign-in as
-approvals. Saves and imports are refused when they come from another site's
-page (a browser sends a cached Basic-auth password with any request to the
-site), and are handled one at a time, so two at once cannot each pass the
+approvals. Like every other state-changing request, saves and imports are
+refused when they come from another site's page (a browser sends a cached
+Basic-auth password with any request to the site; see
+[Security](/container-doctor/guides/security/#the-dashboard)), and are handled
+one at a time, so two at once cannot each pass the
 checks and together leave a combination nobody checked.
