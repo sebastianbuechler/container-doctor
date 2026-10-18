@@ -32,7 +32,7 @@ def inspect(**overrides):
         "HostConfig": {"Memory": 1024 ** 3, "NanoCpus": 0, "CapAdd": ["SYS_ADMIN"],
                        "RestartPolicy": {"Name": "unless-stopped"}, "NetworkMode": "tools_default",
                        "PortBindings": {"80/tcp": [{"HostIp": "", "HostPort": "8080"}]}},
-        "Mounts": [{"Source": "/volume1/docker/app", "Destination": "/data", "RW": True}],
+        "Mounts": [{"Source": "/srv/docker/app", "Destination": "/data", "RW": True}],
         "NetworkSettings": {"Networks": {"tools_default": {}}},
     }
     for path, value in overrides.items():
@@ -84,12 +84,12 @@ class Diffs(unittest.TestCase):
     def test_limits_caps_mounts_and_ports(self):
         before = snap()
         after = copy.deepcopy(before)
-        after.update(mem_limit=2 * 1024 ** 3, cap_add=[], mounts=["/volume2/app:/data:rw"],
+        after.update(mem_limit=2 * 1024 ** 3, cap_add=[], mounts=["/mnt/disk2/app:/data:rw"],
                      ports=["8081->80/tcp"])
         found = runconfig.diff(before, after)
         self.assertIn("memory limit 1g → 2g", found)
         self.assertIn("cap add - SYS_ADMIN", found)
-        self.assertIn("mounts + /volume2/app:/data:rw", found)
+        self.assertIn("mounts + /mnt/disk2/app:/data:rw", found)
         self.assertIn("ports - 8080->80/tcp", found)
 
     def test_a_basic_auth_label_change_hides_the_hash(self):

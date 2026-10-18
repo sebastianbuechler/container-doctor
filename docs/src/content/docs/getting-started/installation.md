@@ -24,7 +24,7 @@ is a complete stack:
 | Service | What it is |
 |---|---|
 | `doctor-socket-proxy` | LinuxServer's socket proxy, the doctor's only way to Docker: it may list, inspect, read logs and stats, and restart - never create, exec or touch volumes. See [The socket proxy](/container-doctor/guides/socket-proxy/). |
-| `doctor-smart` | Optional. Reads each drive's SMART data so the doctor never needs raw disk access. Remove it if you don't want drive health. |
+| `doctor-smart` | Optional, behind the Compose profile `smart`. Reads each drive's SMART data so the doctor never needs raw disk access. See [Drive health](/container-doctor/guides/storage/#drive-health). |
 | `container-doctor` | The doctor: non-root, read-only root filesystem, no capabilities, its database in `./data`. |
 
 Settings go in a `.env` file next to it, or your Docker manager's stack
@@ -35,12 +35,54 @@ Every setting is passed as `- X=${X:-}`; keep that pattern when you adapt the
 file, because it is how the Settings page knows which settings the stack
 environment can reach.
 
+A dashboard password (`DOCTOR_WEB_PASSWORD`) or OIDC is required: with
+neither configured, the dashboard and its API refuse every request. See
+[Signing in](/container-doctor/guides/sign-in/).
+
+## The user it runs as
+
+The image runs as UID:GID `1000:1000`. Compose's `user:` line, set from
+`DOCTOR_UID` and `DOCTOR_GID`, overrides it, so the data directory can belong
+to any user. An install whose data directory belongs to another user - an
+earlier image ran as `1026:100` - either sets `DOCTOR_UID=1026` and
+`DOCTOR_GID=100`, or `chown`s the directory to `1000:1000`.
+
+Pin `DOCTOR_IMAGE_TAG` to a release (`X.Y.Z`) rather than `latest` once it
+works, so a redeploy never brings a version you did not choose.
+
 ## Behind a reverse proxy
 
 The dashboard listens on port 8080. Before it is reachable from outside your
 LAN, put a reverse proxy with TLS in front of it, drop the `ports:` mapping in
 favour of the proxy's network, and set `DOCTOR_PUBLIC_URL` to the address it is
-served at - links in notifications and OIDC sign-in use it.
+served at - links in notifications and OIDC sign-in use it. With the proxy on
+the same host, publish the port as `127.0.0.1:8080:8080` instead, so only the
+proxy reaches it.
+
+## Notifications
+
+The doctor pushes incidents, approvals waiting and the results of actions
+through [ntfy](https://ntfy.sh). Notifications are off until both a server and
+a topic are set:
+
+```ini title=".env"
+DOCTOR_NTFY_URL=https://ntfy.sh
+DOCTOR_NTFY_TOPIC=<a long random name: openssl rand -hex 16>
+DOCTOR_NTFY_TOKEN=
+```
+
+**On ntfy.sh a topic is public.** Anyone who knows or guesses its name can
+subscribe and read every notification - container names, what failed and the
+model's summary of why. A name like `container-doctor` is the first thing
+anyone would try. Pick a long random topic, protect it with an access token
+(`DOCTOR_NTFY_TOKEN`, on a server with access control), or run your own ntfy
+server and point `DOCTOR_NTFY_URL` at it.
+
+`DOCTOR_NTFY_URL` and the token are set in the stack environment only, since
+the token is sent to that server; the topic can also be changed on the
+Settings page. With `DOCTOR_PUBLIC_URL` set, each notification links to its
+incident (see
+[From a notification to the incident](/container-doctor/guides/dashboard/#from-a-notification-to-the-incident)).
 
 ## Which host
 
@@ -55,11 +97,9 @@ either.
 |---|---|
 | `DOCTOR_HOST_KIND` | `auto` (the default) detects; `synology` or `generic` overrides it, should the guess be wrong. |
 | `DOCTOR_HOST_NAME` | What diagnoses, notifications and the Host page call the host, e.g. `tower`. Empty: "the host", and the Host page shows the detected model (`Synology DS920+`). |
-| `DOCTOR_DATA_VOLUME`, `DOCTOR_UID`, `DOCTOR_GID` | Where the database lives on the host and who owns it. Read by the compose file itself; the defaults are `./data` and `1000:1000`. On a Synology that is typically `/volume1/docker/container-doctor` and `1026:100`. |
+| `DOCTOR_DATA_VOLUME`, `DOCTOR_UID`, `DOCTOR_GID` | Where the database lives on the host and who owns it. Read by the compose file itself; the defaults are `./data` and `1000:1000`. On a Synology, a directory under a shared folder such as `/volume1/docker/container-doctor`, owned by your DSM user (often `1026:100`), works the same way. |
 
-Incidents about the host as a whole are filed under `host:system`. Earlier
-versions called it `host:nas`; the database is renamed on the first start, and
-open host incidents keep folding their repeats.
+Incidents about the host as a whole are filed under `host:system`.
 
 ## Which Docker manager
 

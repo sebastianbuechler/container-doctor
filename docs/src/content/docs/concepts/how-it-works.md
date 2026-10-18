@@ -8,7 +8,7 @@ Each stage in the diagram above, in more detail:
 | Stage | What happens |
 |---|---|
 | **Detect** | A Docker event (`die`, `oom`, `health_status`) or a 30-second poll trips one of the rules below. No model is involved — this is what stops the expensive, non-deterministic part from running on every hiccup. |
-| **Gather** | The container's log tail, stats, health-check output, restart history and recent incidents are collected, then run through redaction. Nothing leaves the host before that. |
+| **Gather** | The container's log tail, stats, health-check output, restart history and recent incidents are collected, then run through redaction, which is pattern-based and best effort. Nothing is sent before that. |
 | **Diagnose** | The model gets that evidence and returns structured JSON: root cause, confidence, severity, steps for you, and one `recommended_action` from a closed enum. Identical failures reuse a cached diagnosis instead of asking again. |
 | **Decide** | Plain Python. Checks the mode, the action allowlist, the confidence floor, both circuit breakers and the per-failure cooldown. Anything that fails a check becomes a pending approval with the reason written out. |
 | **Act** | `notify_only` sends an ntfy push. An approved action executes, then the doctor waits and re-checks the container — if it's still unhealthy the incident is marked **failed** rather than retried. |
@@ -29,7 +29,7 @@ the dashboard, including the actions deliberately *not* taken and why.
 | `high_memory` | ≥90% of the container's memory limit for 4 consecutive polls |
 | `log_fatal` | A single `FATAL` / `CRITICAL` line — one is enough |
 | `log_errors` | 5+ lines matching the error pattern, **or** 10+ lines at `ERROR` level, in the last 120 log lines |
-| `host_disk_pressure` | A watched filesystem is ≥90% full (the volume holding the doctor's own `/data` mount by default) |
+| `host_disk_pressure` | A watched filesystem is ≥95% full, critical at ≥98% (`DOCTOR_DISK_THRESHOLD`, `DOCTOR_DISK_CRITICAL`; the volume holding the doctor's own `/data` mount by default) |
 | `disk_filling` | A watched filesystem is on course to be full within `DOCTOR_DISK_FORECAST_DAYS` (default 21), whatever its current percentage |
 | `raid_degraded` | A disk array has a failed member, is missing a disk, or is rebuilding (read from `/proc/mdstat`) |
 | `raid_errors` | A warning short of degraded: the last scrub found sectors that disagree, or md has corrected read errors on a disk (read from `/sys`) |
@@ -49,13 +49,13 @@ slow health check doesn't page you.
 
 ## One problem, not two incidents
 
-When a database goes unhealthy its application follows, and the doctor used to
-raise two incidents for one problem — diagnosing each in isolation, without the
-one fact that explains both.
+When a database goes unhealthy its application follows. Diagnosed in
+isolation, that would be two incidents for one problem, each without the one
+fact that explains both.
 
 Compose already records the project, the service name and the declared
 dependencies on every container it starts, so the relationship is there to be
-read. The evidence sent for diagnosis now carries it:
+read. The evidence sent for diagnosis carries it:
 
 ```
 ## Stack `docmost` (service `app`)
@@ -115,8 +115,17 @@ same allowance. An action that loses the reservation stays pending for approval,
 with the current circuit-breaker or cooldown reason recorded.
 
 Failing any of these turns the action into a pending approval with the reason
-written out, rather than silently dropping it.
+written out, rather than silently dropping it. A confidence the model returns
+as NaN or infinity is read as 0.
+
+**Approving it yourself** runs it regardless of the circuit breakers and the
+cooldown: they stop the doctor repeating itself, not you. The same goes for a
+manual restart or stop from the dashboard. The doctor's own containers and the
+ignore list are still refused. An approval is claimed atomically, so an action
+runs at most once however many times it is approved, and the approver is
+recorded as its decider.
 
 After a restart the doctor waits `DOCTOR_VERIFY_DELAY` seconds and re-checks the
-container. If it's still not healthy, the incident is marked **failed** and you
-get a notification — it does not try again on its own.
+container; after `stop_container` it checks that the container is actually
+stopped. If the check fails, the incident is marked **failed** and you get a
+notification — it does not try again on its own.

@@ -3,7 +3,9 @@ title: "The dashboard"
 description: "A tour of the dashboard: the briefing, incidents, containers, and finding your way around."
 ---
 
-`https://doctor.example.com` — HTTP Basic auth, live-updating over SSE.
+`http://<host>:8080`, or your own hostname behind a reverse proxy. It needs a
+sign-in - the password (an HTTP Basic prompt at `/auth/password`) or OIDC; see
+[Sign-in](/container-doctor/guides/sign-in/) - and updates live over server-sent events.
 
 - **Overview** — the briefing, then the tiles: current mode, open incidents,
   actions waiting for you, and today's LLM spend against the cap.
@@ -23,8 +25,8 @@ description: "A tour of the dashboard: the briefing, incidents, containers, and 
 - **Settings** — the running configuration, where each value comes from, and
   the place to change it. See [Settings](/container-doctor/guides/settings/).
 
-Set `DOCTOR_WEB_PASSWORD` or the dashboard stays read-only: without it, approvals
-and manual actions return 403.
+Without `DOCTOR_WEB_PASSWORD` or OIDC, nothing here is served at all: every
+request is answered 403.
 
 ## Reading the dashboard
 
@@ -113,8 +115,7 @@ your queue, the other is what the rules did.
 
 The incident filters default to **Open**, which is why dismissing something
 makes it leave the list; it stays reachable under **Dismissed** and **All**.
-*Open* deliberately includes awaiting-approval, which an exact status match used
-to hide.
+*Open* deliberately includes awaiting-approval.
 
 **Storage** shows each watched path's fullness, how fast it is moving and the
 forecast chart, and the disk arrays below it. **Image updates** appears after the
@@ -153,12 +154,12 @@ The colour theme is chosen there too, and remembered per browser.
 
 ## From a notification to the incident
 
-With `DOCTOR_PUBLIC_URL` set — it already is, for sign-in — every ntfy
+With `DOCTOR_PUBLIC_URL` set — OIDC sign-in needs it anyway — every ntfy
 notification opens the incident it is about rather than the top of the
 dashboard, and carries a button: **Review and approve** when an action is
 waiting, **Open incident** otherwise. The incident is opened, scrolled to and
 marked, whatever filter the list is on. If the browser is signed out, the link
-is kept through the Pocket ID round trip and put back afterwards.
+is kept through the sign-in round trip and put back afterwards.
 
 **Copy link** on any incident gives the same address, `#incident/<id>`.
 
@@ -171,9 +172,10 @@ screenful of containers that are fine.
 
 ## Which build is running
 
-**Settings → Build and mode → Build** shows the commit the running image was
-built from — `aae1b80`. Compare it with `main` to tell whether a deploy actually
-landed.
+**Settings → Build and mode** shows the release the running image was built
+for - `1.2.0`, set by the Release workflow as `DOCTOR_VERSION` - and the commit
+it was built from, `aae1b80`. Compare them with the latest release, or with
+`main`, to tell whether a deploy actually landed.
 
 This matters because *"the deploy succeeded"* and *"the new code is running"*
 are different claims: a redeploy that does not pull recreates the container from
@@ -183,12 +185,15 @@ rather than passed through the compose file, so it reports the image's identity:
 a compose variable would come fresh from git on every deploy and read as current
 even while a stale image ran.
 
-A local build with no stamp reads `dev` rather than a commit.
+A local build with no stamp reads `dev` rather than a commit, and an image
+built from `main` rather than a release shows no version.
 
 ## On the phone's home screen
 
 The dashboard installs as an app: **Add to Home Screen** in Safari, **Install
 app** in Chrome. It opens full-screen with its own icon, and a notification link
-opens straight into it. There is no service worker and no offline copy: a
+opens straight into it. Its service worker does one thing: opened with no
+connection at all, it shows a small offline page that says so and opens the
+dashboard once it can reach it. It caches no data and none of the dashboard: a
 monitoring page that shows cached state when it cannot reach the doctor would
 be worse than one that says it cannot.

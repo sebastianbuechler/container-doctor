@@ -1,8 +1,9 @@
 """Scrub secrets out of anything that leaves the host, and normalise log noise.
 
-Homelab container logs routinely carry bearer tokens, DSN strings and API keys
-(Speedtest Tracker, for one, takes its bearer token as an env var),
-so redaction runs before evidence is persisted *or* sent to an LLM.
+Container logs routinely carry bearer tokens, DSN strings and API keys, so
+redaction runs before evidence is persisted *or* sent to an LLM. It is best
+effort: a secret is recognised by its name or its shape, and one with neither
+passes through.
 """
 
 from __future__ import annotations
@@ -22,24 +23,42 @@ _SECRET_NAME = (
     r"dsn|connection[_-]?string|salt|signature)"
 )
 
+# A name with one of those in it: DB_PASSWORD, x-api-key, client.secret.
+_SECRET_KEY = rf"[\w.-]*?{_SECRET_NAME}[\w.-]*"
+
 _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
-    # key=value / key: value / "key": "value" / --key value
-    (re.compile(rf'(?i)\b({_SECRET_NAME})(\s*[:=]\s*|"\s*:\s*"|\s+)([^\s,;"\'}}\]]{{4,}})'),
-     rf"\g<1>\g<2>{REDACTED}"),
+    # Token shapes first: an assignment below would otherwise take the word
+    # in front of one ("Authorization: Bearer x") for the value.
     # Authorization headers
     (re.compile(r"(?i)\b(bearer|basic)\s+[A-Za-z0-9\-._~+/=]{8,}"), rf"\g<1> {REDACTED}"),
     # JWTs
     (re.compile(r"\beyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}\b"), REDACTED),
     # Credentials embedded in URLs
-    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]+):([^/\s@]+)@"), rf"\g<1>\g<2>:{REDACTED}@"),
+    # (the user may be empty: redis://:password@host)
+    (re.compile(r"(?i)\b([a-z][a-z0-9+.-]*://)([^/\s:@]*):([^/\s@]+)@"), rf"\g<1>\g<2>:{REDACTED}@"),
     # Common vendor key shapes
     (re.compile(r"\bsk-ant-[A-Za-z0-9_-]{10,}\b"), REDACTED),
-    (re.compile(r"\bsk-[A-Za-z0-9]{20,}\b"), REDACTED),
+    (re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b"), REDACTED),
+    (re.compile(r"\b[rs]k_(?:live|test)_[A-Za-z0-9]{16,}\b"), REDACTED),
     (re.compile(r"\bgh[pousr]_[A-Za-z0-9]{20,}\b"), REDACTED),
+    (re.compile(r"\bgithub_pat_[A-Za-z0-9_]{20,}\b"), REDACTED),
+    (re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b"), REDACTED),
+    (re.compile(r"\bhf_[A-Za-z0-9]{30,}\b"), REDACTED),
+    (re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b"), REDACTED),
     (re.compile(r"\bAKIA[0-9A-Z]{16}\b"), REDACTED),
     (re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b"), REDACTED),
     # PEM blocks
     (re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----.*?-----END [A-Z ]*PRIVATE KEY-----", re.S), REDACTED),
+    # Quoted assignments, the whole quoted value: PASSWORD="two words",
+    # "api_key": "x", password: 'x'.
+    (re.compile(rf"""(?i)\b({_SECRET_KEY})(["']?\s*[:=]\s*)(["'])[^"'\n]*\3"""),
+     rf"\g<1>\g<2>\g<3>{REDACTED}\g<3>"),
+    # Unquoted ones: DB_PASSWORD=x, MYSQL_ROOT_PASSWORD: x, --db-password=x.
+    (re.compile(rf"""(?i)\b({_SECRET_KEY})(["']?\s*[:=]\s*)(?!["'])([^\s,;"'}}\]]{{4,}})"""),
+     rf"\g<1>\g<2>{REDACTED}"),
+    # An option and its value as two words: --db-password x, token x.
+    (re.compile(rf"""(?i)(--?{_SECRET_KEY}|\b{_SECRET_NAME})(\s+)(?!\[redacted\])([^\s,;"'}}\]]{{4,}})"""),
+     rf"\g<1>\g<2>{REDACTED}"),
 )
 
 # Env var names that are safe (and useful) to show a diagnostician.
@@ -69,7 +88,11 @@ def redact_obj(value: Any) -> Any:
     if isinstance(value, str):
         return redact(value)
     if isinstance(value, dict):
-        return {key: redact_obj(item) for key, item in value.items()}
+        # The key says what the value is: {"password": "x"} has nothing in
+        # the value itself to recognise.
+        return {key: (REDACTED if isinstance(key, str) and isinstance(item, str) and item
+                      and secret_name(key) else redact_obj(item))
+                for key, item in value.items()}
     if isinstance(value, (list, tuple)):
         return [redact_obj(item) for item in value]
     return value

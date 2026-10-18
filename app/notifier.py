@@ -1,8 +1,9 @@
 """ntfy push notifications.
 
-This repo already runs an ntfy instance, so the doctor publishes there rather
-than adding another notification channel. Failures to notify are logged and
-swallowed - a broken notifier must never stop remediation.
+ntfy, self-hosted or ntfy.sh, is the one notification channel: its apps
+cover phones and desktops, and anything else can subscribe to a topic.
+Failures to notify are logged and swallowed - a broken notifier must never
+stop remediation.
 """
 
 from __future__ import annotations

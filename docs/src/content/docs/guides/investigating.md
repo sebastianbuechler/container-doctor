@@ -41,21 +41,19 @@ each incident:
   useful part: "memos went unhealthy" reads very differently when postgres was
   throwing connection errors in the same minute.
 
-Both go through the same redaction as everything else, and both are refused
-outright unless `DOCTOR_WEB_PASSWORD` is set — the read-only endpoints fall
-through without auth, live log content must not. `doctor.enable=false` excludes
-a container here too; the label would mean little if it only applied to
+Both go through the same redaction as everything else, and both need a
+sign-in like the rest of the dashboard. `doctor.enable=false` excludes a
+container here too; the label would mean little if it only applied to
 automatic reads.
 
 **This is not a log browser, deliberately.** For browsing, searching and
 tailing everything, run [Dozzle](https://dozzle.dev/) — it does regex search,
 multi-container merge, split view and SQL queries in under 15MB, and it does
 them better than a side feature here would. The reason to keep it out of the
-doctor is not effort but exposure: a live unredacted feed of every container on
-a public hostname undoes the one thing this design is careful about, and the
-stacks in `tools/` pass bearer tokens and app keys as environment variables.
-Dozzle keeps that decision in its own service, with its own auth, made on
-purpose.
+doctor is not effort but exposure: a live unredacted feed of every container
+undoes the one thing this design is careful about, and plenty of stacks pass
+bearer tokens and app keys as environment variables. Dozzle keeps that decision
+in its own service, with its own auth, made on purpose.
 
 ## Taking it further with your own agent
 

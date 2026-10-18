@@ -11,14 +11,15 @@ allowed it). Even then the model can only pick one of five fixed actions -
 restart, stop, prune dangling images, notify, or nothing - and a deterministic
 policy engine decides whether that action may run, inside per-container and
 host-wide rate limits and cooldowns. The socket proxy makes creating a
-container impossible whatever the mode. See
+container impossible whatever the mode, and the dashboard refuses every
+request until a password or OIDC sign-in is configured. See
 [How it works](/container-doctor/concepts/how-it-works/).
 
 ## What is sent to the model?
 
 The evidence for one incident: the rule that fired, the container's state and
 configuration, what changed on it, its stack's neighbours, the host's state,
-and a tail of its logs with secrets stripped by pattern. Nothing is sent until a
+and a tail of its logs with secrets redacted by pattern, best effort. Nothing is sent until a
 rule has already opened an incident, and identical failures reuse a cached
 diagnosis. Every request sent can be read back on the dashboard's LLM page. See
 [Models and cost](/container-doctor/guides/models/) and [Security](/container-doctor/guides/security/).
@@ -28,7 +29,9 @@ diagnosis. Every request sent can be read back on the dashboard's LLM page. See
 One diagnosis is roughly 1,500 tokens in and 200 out. A model is only called
 when a rule has opened an incident, so a normal week is a handful of calls - cents
 a month on a cheap model, nothing on a free tier or a local one. A daily budget
-(`DOCTOR_DAILY_USD_BUDGET`) and call cap hard-stop spend either way.
+(`DOCTOR_DAILY_USD_BUDGET`) and call cap stop new calls either way; the budget
+is checked against recorded spend, so for an absolute ceiling also set a limit
+with the provider.
 
 ## Does it work without a model?
 

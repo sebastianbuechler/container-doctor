@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from dataclasses import dataclass
 from typing import Any
 
@@ -66,7 +67,12 @@ class Policy:
     ) -> Decision:
         container_name = incident["container_name"]
         action = (diagnosis or {}).get("recommended_action", "notify_only")
-        confidence = float((diagnosis or {}).get("confidence", 0.0))
+        try:
+            confidence = float((diagnosis or {}).get("confidence", 0.0))
+        except (TypeError, ValueError):
+            confidence = 0.0
+        if not math.isfinite(confidence):  # NaN would pass any threshold
+            confidence = 0.0
 
         if incident.get("kind") in ("raid_degraded", "raid_errors"):
             # Whatever the model suggests: restarting a container cannot bring
@@ -171,11 +177,18 @@ class Executor:
             return await self.docker.prune_images()
         raise ValueError(f"executor refuses unknown action: {action}")
 
-    async def verify(self, container_id: str, container_name: str) -> tuple[bool, str]:
-        """Check whether the container looks healthy again after an action."""
+    async def verify(self, container_id: str, container_name: str,
+                     action: str = "restart_container") -> tuple[bool, str]:
+        """Check whether the container ended up as the action meant it to:
+        stopped after a stop, running and healthy again after a restart."""
         await asyncio.sleep(self.settings.verify_delay_seconds)
         containers = await self.docker.list_containers()
         current = next((c for c in containers if c["id"] == container_id), None)
+        if action == "stop_container":
+            if current is None or current.get("state") in ("exited", "created", "dead"):
+                return True, f"{container_name} is stopped"
+            return False, (f"{container_name} is '{current.get('state')}' "
+                           f"{self.settings.verify_delay_seconds}s after the stop")
         if current is None:
             return False, f"{container_name} is gone after the action"
         state, health = current.get("state"), current.get("health")

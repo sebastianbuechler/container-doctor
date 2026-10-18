@@ -23,7 +23,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Nothing is tagged, built or announced from a commit whose tests fail.
+  tests:
+    uses: ./.github/workflows/tests.yml
+  proxy:
+    uses: ./.github/workflows/proxy.yml
+
   tag:
+    needs: [tests, proxy]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -48,7 +55,7 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Tag the commit
         env:

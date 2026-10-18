@@ -16,12 +16,23 @@ except ImportError:  # pragma: no cover - the image always has it
     HAVE_FASTAPI = False
 
 
+# Closed when the module's tests are done; the clients that use them are
+# made in passing, with nothing to close them at the end of each test.
+_STORES: list = []
+
+
+def tearDownModule() -> None:
+    for store in _STORES:
+        store.close()
+
+
 class _StubSupervisor:
     def __init__(self, settings):
         from app.store import Store
 
         self.settings = settings
         self.store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
+        _STORES.append(self.store)
         self.docker_connected = False
 
 

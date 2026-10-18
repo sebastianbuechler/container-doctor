@@ -242,6 +242,7 @@ class Tracking(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
 
     def setUp(self):
         from app.config import Settings

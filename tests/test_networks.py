@@ -89,7 +89,7 @@ class Report(unittest.TestCase):
     def test_traefik_pointed_at_a_network_the_container_is_not_on(self):
         result = report([container("app", attrs("app", {"app_default": endpoint("172.21.0.2")}),
                                    labels={"traefik.enable": "true",
-                                           "traefik.docker.network": "reverse_proxy_bridge"})])
+                                           "traefik.docker.network": "proxy"})])
         [finding] = result["findings"]
         self.assertEqual(finding["kind"], "traefik_network_missing")
         self.assertEqual(finding["severity"], "warning")

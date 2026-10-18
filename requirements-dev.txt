@@ -1,0 +1,3 @@
+# What the tests need on top of requirements.txt; not installed in the image.
+-r requirements.txt
+PyYAML==6.0.3

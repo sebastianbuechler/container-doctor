@@ -7,7 +7,7 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 os.environ.setdefault("DOCTOR_DATA_DIR", tempfile.mkdtemp())
@@ -49,6 +49,7 @@ class Detail(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.server.shutdown()
+        cls.server.server_close()
 
     def setUp(self):
         from app.config import Settings

@@ -105,7 +105,7 @@ class PollOnceTests(unittest.IsolatedAsyncioTestCase):
     async def test_each_container_keeps_its_own_stats_and_logs(self):
         sup = supervisor(SlowDocker(count=5, stats_seconds=0.01), poll_concurrency=3)
         await sup._poll_once()
-        for name, container in sup.containers.items():
+        for container in sup.containers.values():
             self.assertEqual(container["stats"]["for"], container["id"])
         seen = {call.args[0]["id"]: call.args[2] for call in sup.detector.from_poll.call_args_list}
         self.assertEqual(seen, {f"id{i}": f"log of id{i}" for i in range(5)})

@@ -36,7 +36,7 @@ Poll interval: from the start of one poll to the next.
 
 ### DOCTOR_POLL_CONCURRENCY
 
-Containers read at once during a poll. `docker stats` takes a second or two per container, so one at a time made a poll of 30 run over a minute.
+Containers read at once during a poll. Applies on restart.
 
 **Default:** `6` · **Type:** whole number · **Applies on restart**
 
@@ -44,11 +44,11 @@ Containers read at once during a poll. `docker stats` takes a second or two per 
 
 The Docker endpoint: the socket proxy, never the raw socket. The compose file sets it from DOCTOR_DOCKER_HOST.
 
-**Default:** `tcp://doctor-socket-proxy:2375` · **Applies on restart**
+**Default:** `tcp://doctor-socket-proxy:2375` · **Environment only**
 
 ### DOCTOR_REQUIRE_OPT_IN
 
-Opt-in only: on watches only containers labelled doctor.enable=true; off watches every container except doctor.enable=false.
+True watches only containers labelled doctor.enable=true.
 
 **Default:** `off` · **Type:** on / off
 
@@ -82,21 +82,21 @@ The machine itself. auto tells a Synology NAS from any other Linux by its kernel
 
 ### DOCTOR_LLM_PROVIDER
 
-Set DOCTOR_LLM_PROVIDER=openai and point at any OpenAI-compatible endpoint. Verify it in one command before you rely on it: docker compose exec container-doctor python -m app.selftest  Google Gemini - free tier, no card. See the README for the privacy caveat.
+Set DOCTOR_LLM_PROVIDER=openai and point at any OpenAI-compatible endpoint. The base URL can only be set here, never from the Settings page, since the API key is sent to it. Verify it in one command before you rely on it: docker compose exec container-doctor python -m app.selftest  Free tiers, limits and prices below are as of October 2026 - check the vendor's page, these change often.  Google Gemini - free tier, no card. See https://sebastianbuechler.github.io/container-doctor/guides/models/ ("Free options, ranked") for the privacy caveat: free-tier inputs may be used for training.
 
 **Default:** `anthropic` · **One of:** `anthropic`, `openai` · **Applies on restart**
 
 ### DOCTOR_MODEL
 
-OpenRouter `:free` variants cost nothing but are rate-limited hard (20 req/min; 50/day under $10 of credits, 1000/day above).
+Built-in prices (USD per million tokens, in / out): claude-opus-5-5 4/20, claude-sonnet-5-5 2/10, claude-haiku-5-5 0.10/0.50, claude-fable-5 10/50.
 
-**Default:** `claude-opus-5`
+**Default:** `claude-opus-5-5`
 
 ### DOCTOR_OPENAI_BASE_URL
 
-OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...).
+OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...). Environment-only, like every URL a secret is sent to: a setting saved from the page could otherwise send the key to a host of its choosing.
 
-**Default:** `unset`
+**Default:** `unset` · **Environment only**
 
 ### ANTHROPIC_API_KEY
 
@@ -106,7 +106,7 @@ Anthropic API key. Without it the doctor still detects incidents and shows them 
 
 ### DOCTOR_OPENAI_API_KEY
 
-OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...).
+OpenAI-compatible endpoint (Ollama, LM Studio, OpenRouter, vLLM, ...). Environment-only, like every URL a secret is sent to: a setting saved from the page could otherwise send the key to a host of its choosing.
 
 **Default:** `unset` · **Secret**
 
@@ -138,13 +138,13 @@ USD per million tokens. Unset prices Anthropic models from a built-in table and 
 
 ### DOCTOR_DAILY_USD_BUDGET
 
-Hard stop for the day once this much has been spent. 0 disables the cap.
+No new calls today once recorded spend reaches this (calls in flight can overshoot slightly; set a limit with the provider for an absolute ceiling). Manual re-diagnoses count too. 0 disables the cap.
 
 **Default:** `1` · **Type:** number
 
 ### DOCTOR_DAILY_CALL_LIMIT
 
-Hard stop after this many calls today. This is the cap that matters on a free tier, where the dollar meter reads zero all day. 0 disables it.
+No new calls after this many today. This is the cap that matters on a free tier, where the dollar meter reads zero all day. 0 disables it.
 
 **Default:** `0` · **Type:** whole number
 
@@ -200,7 +200,7 @@ Consecutive polls a breach must persist for, so one backup spike is quiet.
 
 ### DOCTOR_LOG_MAX_AGE_MINUTES
 
-Ignore log lines older than this. A quiet container's `tail` reaches back as far as it has been running - Docmost's Postgres was serving FATAL lines from 2025 to a poll in 2026, which read as a live failure.
+Log lines older than this are never read; 0 reads the whole tail.
 
 **Default:** `60` · **Type:** whole number
 
@@ -248,49 +248,49 @@ Free space is a property of the filesystem, so /data reports all of the volume i
 
 ### DOCTOR_DISK_THRESHOLD
 
-A storage host that is simply well used sits high for years; 90% pestered about a disk with terabytes free.
+A watched filesystem this full (%) is a warning...
 
 **Default:** `95` · **Type:** number
 
 ### DOCTOR_DISK_CRITICAL
 
-How often a disk's free space is recorded for the fill forecast.
+...and this full, critical.
 
-**Default:** `95` · **Type:** number
+**Default:** `98` · **Type:** number
 
 ### DOCTOR_DISK_FORECAST_DAYS
 
-Where the same condition stops being a warning. Was hard-coded at 95. How far back the fill-rate is fitted, and how close to full is worth saying something about. A percentage says how full; these say whether it is going anywhere.
+The fill-rate forecast: an incident when a filesystem is on course to be full within DOCTOR_DISK_FORECAST_DAYS, critical within the _CRITICAL_DAYS. The rate is fitted over DOCTOR_DISK_TREND_WINDOW_DAYS of samples, one per DOCTOR_DISK_SAMPLE_MINUTES.
 
 **Default:** `21` · **Type:** whole number
 
 ### DOCTOR_DISK_FORECAST_CRITICAL_DAYS
 
-Where the same condition stops being a warning. Was hard-coded at 95. How far back the fill-rate is fitted, and how close to full is worth saying something about. A percentage says how full; these say whether it is going anywhere.
+How far back the fill-rate is fitted, and how close to full is worth saying something about. A percentage says how full; these say whether it is going anywhere.
 
 **Default:** `5` · **Type:** whole number
 
 ### DOCTOR_DISK_TREND_WINDOW_DAYS
 
-Where the same condition stops being a warning. Was hard-coded at 95. How far back the fill-rate is fitted, and how close to full is worth saying something about. A percentage says how full; these say whether it is going anywhere.
+How far back the fill-rate is fitted, and how close to full is worth saying something about. A percentage says how full; these say whether it is going anywhere.
 
 **Default:** `14` · **Type:** whole number
 
 ### DOCTOR_MDSTAT_PATH
 
-The kernel's account of every md array. off turns the RAID check off.
+Software RAID (md) state; off turns the RAID check off.
 
 **Default:** `/proc/mdstat` · **`off` turns it off**
 
 ### DOCTOR_SYSFS_PATH
 
-Where the arrays' layout, scrub results and per-disk errors are read from. Docker mounts the host's /sys read-only; off skips it.
+Array layout, scrub results and per-disk read errors; off skips them.
 
 **Default:** `/sys` · **Applies on restart** · **`off` turns it off**
 
 ### DOCTOR_RAID_ERRORS_PER_DAY
 
-How many newly corrected read errors in a day turn a drive's warning critical. The first one is always a warning; this is "and it is getting worse". md itself fails a member at 20 corrected errors that come faster than its hourly halving drains them; 0 never escalates.
+New corrected read errors on one drive within a day that make its warning critical (0 never escalates), and how many days a drive warns after its last new one.
 
 **Default:** `10` · **Type:** whole number
 
@@ -464,13 +464,13 @@ Seconds to wait after an action before checking whether it actually helped.
 
 ### DOCTOR_INCIDENT_DEDUP_HOURS
 
-How long a recurrence folds into the open incident instead of opening a new one. Measured from when it was last seen, so a condition that keeps firing stays a single incident for as long as it lasts.
+A recurrence within this many hours of the last sighting folds into the open incident instead of opening a new one.
 
 **Default:** `24` · **Type:** whole number
 
 ### DOCTOR_AUTO_RESOLVE_HOURS
 
-Resolve an incident whose condition has not re-fired for this long. 0 is off. Kinds that suppress their own re-alerts are excluded - see Store.auto_resolve_stale.
+An incident whose condition has not re-fired for this long resolves itself; 0 turns that off.
 
 **Default:** `12` · **Type:** whole number
 
@@ -484,25 +484,25 @@ Read GitHub release notes for images with a newer version, to link them and flag
 
 ### DOCTOR_OIDC_ISSUER
 
---- OIDC --------------------------------------------------------------- Issuer base URL, e.g. https://id.example.com. Empty disables OIDC.
+OIDC sign-in through your own provider (Pocket ID, Authentik, Keycloak...). Empty issuer turns it off. The provider's callback URL is <DOCTOR_PUBLIC_URL>/auth/callback.
 
-**Default:** `unset` · **Applies on restart**
+**Default:** `unset` · **Environment only**
 
 ### DOCTOR_OIDC_CLIENT_ID
 
 The client ID registered with the provider for the doctor.
 
-**Default:** `unset` · **Applies on restart**
+**Default:** `unset` · **Environment only**
 
 ### DOCTOR_PUBLIC_URL
 
-The doctor's own public base URL; the redirect URI is derived from it and must match what the provider has registered exactly.
+The dashboard's own address, as the browser reaches it. Also used for the links in notifications.
 
-**Default:** `unset` · **Applies on restart**
+**Default:** `unset` · **Environment only**
 
 ### DOCTOR_WEB_PASSWORD
 
-Protects the dashboard. Approvals and manual actions are disabled until this is set, because the dashboard can restart containers.
+Protects the dashboard. Required; a long random one, e.g. openssl rand -base64 24. With neither a password nor OIDC set, the dashboard and its API refuse every request, because the dashboard can restart containers. Known placeholders (change-me, changeme, password, admin, doctor, secret, 123456, the user name...) are refused: the doctor logs a warning and treats sign-in as unconfigured. Under 12 characters works, with a warning at startup.
 
 **Default:** `unset` · **Secret**
 
@@ -514,33 +514,33 @@ The client ID registered with the provider for the doctor.
 
 ### DOCTOR_OIDC_ALLOWED_GROUPS
 
-Empty means any account the provider authenticates.
+Comma-separated groups allowed in; empty lets in any account the provider authenticates.
 
-**Default:** `none` · **Type:** comma-separated list · **Applies on restart**
+**Default:** `none` · **Type:** comma-separated list · **Environment only**
 
 ### DOCTOR_SESSION_HOURS
 
-How long a session survives unused. In use, it lasts as long as the provider keeps renewing its tokens.
+Hours an unused session lasts.
 
-**Default:** `12` · **Type:** whole number · **Applies on restart**
+**Default:** `12` · **Type:** whole number · **Environment only**
 
 ### DOCTOR_SESSION_SECRET
 
-Signs the session cookie. Unset means a random one per start, which logs everyone out on restart.
+Signs the session cookie. Unset, one is generated once and kept in the data directory (session_secret, mode 0600). openssl rand -base64 32
 
 **Default:** `unset` · **Secret**
 
 ### DOCTOR_WEB_PASSWORD_FALLBACK
 
-Once OIDC is configured the password is refused by default, so there is one way in. Turn this on to keep it as a way back in when the provider itself is the thing that is broken.
+With OIDC on, the password is refused unless this is true - a way back in when the provider itself is what is broken.
 
-**Default:** `off` · **Type:** on / off · **Applies on restart**
+**Default:** `off` · **Type:** on / off · **Environment only**
 
 ## Briefing
 
 ### DOCTOR_BRIEFING
 
-The summary at the top of the dashboard. Needs an LLM; off leaves the deterministic facts in its place.
+The summary at the top of the dashboard. false leaves the facts without a model's words. An empty model uses DOCTOR_MODEL; a smaller one is plenty.
 
 **Default:** `on` · **Type:** on / off
 
@@ -578,9 +578,9 @@ Pinned rather than -latest, so verdicts do not drift under you.
 
 ### DOCTOR_CLASSIFIER_URL
 
-The Decisions API endpoint the openrouter backend calls.
+The Decisions API endpoint the key is sent to.
 
-**Default:** `https://openrouter.ai/api/alpha/decisions`
+**Default:** `https://openrouter.ai/api/alpha/decisions` · **Environment only**
 
 ### DOCTOR_CLASSIFIER_API_KEY
 
@@ -628,19 +628,19 @@ A host coming back up fires everything at once; past this, the rules decide alon
 
 ### DOCTOR_IMAGE_CHECK_HOURS
 
-How often to ask the registries what they currently publish. The doctor never pulls itself - the socket proxy denies POST /images - but a new build can be redeployed from the dashboard through the deploy workflow.
+How often to ask the registries what they publish; 0 turns the check off.
 
 **Default:** `12` · **Type:** whole number · **Applies on restart**
 
 ### DOCTOR_UPDATE_COOLDOWN_DAYS
 
-A newer version counts once it has been on Docker Hub this many days - match a Dependabot cooldown (or Renovate's minimumReleaseAge), so the dashboard lists what it will propose rather than running days ahead of it. 0 reports every release at once.
+Days a release must be on Docker Hub before it counts as newer - match your Dependabot or Renovate cooldown, if you use one. 0: at once.
 
 **Default:** `3` · **Type:** whole number
 
 ### DOCTOR_RELEASE_NOTES
 
-Read GitHub release notes for images with a newer version, to link them and flag the ones that mention breaking changes. One unauthenticated request per such image per check.
+Read GitHub release notes for images with a newer version.
 
 **Default:** `on` · **Type:** on / off
 
@@ -674,15 +674,15 @@ Owner/repository the stacks are deployed from; see examples/redeploy-workflow.ym
 
 ### DOCTOR_NTFY_URL
 
-Ntfy server to publish to, e.g. https://ntfy.sh or http://ntfy:80. Empty sends no notifications.
+Ntfy push notifications, off until both a server URL and a topic are set. The URL and token are environment-only. On ntfy.sh anyone who knows or guesses a topic's name can read it, so pick a long random one (openssl rand -hex 16), protect it with an access token, or run your own ntfy server.
 
-**Default:** `unset`
+**Default:** `unset` · **Environment only**
 
 ### DOCTOR_NTFY_TOPIC
 
-The ntfy topic notifications are published to.
+The ntfy topic notifications are published to. No default: a topic on a public server is readable by anyone who guesses its name, so it has to be chosen - long and random on ntfy.sh.
 
-**Default:** `container-doctor`
+**Default:** `unset`
 
 ### DOCTOR_NTFY_TOKEN
 
@@ -700,13 +700,13 @@ Stamped into the image by CI. "dev" means a local build.
 
 ### DOCTOR_CLASSIFIER_MAX_STATE_CHARS
 
-Roughly 3,000 tokens: the evidence without the tail of a long log.
+Evidence sent per call, in characters (about 3,000 tokens).
 
 **Default:** `12000` · **Type:** whole number
 
 ### DOCTOR_CLASSIFIER_PRICE_PER_MTOK
 
-Jev's input price; its output is free. Used when OpenRouter does not report the cost itself.
+Input price, USD per million tokens, when OpenRouter does not report the cost itself. Jev's as of October 2026 - check the model page.
 
 **Default:** `0.042` · **Type:** number
 
@@ -742,19 +742,19 @@ Free tiers rate-limit hard (Gemini free: 10/minute); retry rather than lose the 
 
 ### DOCTOR_LOG_ERROR_PATTERN
 
-A log line matching this counts as an error, whatever its level says.
+The wording that counts as an error, as a Python regular expression. The default matches fatal, panic, traceback, segfault, out of memory, oomkill, connection refused, no such host, permission denied, disk full, no space left, deadlock and unhandled exception, case-insensitively.
 
 **Default:** `(?i)\b(fatal|panic|traceback|segfault|out of memory|oomkill|connection refused|no such host|permission denied|disk full|no space left|deadlock|unhandled exception)\b`
 
 ### DOCTOR_LOG_LEVEL
 
-Stamped into the image by CI. "dev" means a local build.
+The release, X.Y.Z, for an image the Release workflow built; empty otherwise.
 
 **Default:** `INFO` · **Environment only**
 
 ### DOCTOR_MAX_OUTPUT_TOKENS
 
-Cap on the tokens one diagnosis may answer with.
+Upper bound on the length of one answer.
 
 **Default:** `4000` · **Type:** whole number
 
@@ -762,17 +762,17 @@ Cap on the tokens one diagnosis may answer with.
 
 The ID token claim holding the user's groups, for DOCTOR_OIDC_ALLOWED_GROUPS.
 
-**Default:** `groups` · **Applies on restart**
+**Default:** `groups` · **Environment only**
 
 ### DOCTOR_OIDC_SCOPES
 
 Scopes requested at sign-in, space-separated.
 
-**Default:** `openid profile email groups` · **Applies on restart**
+**Default:** `openid profile email groups` · **Environment only**
 
 ### DOCTOR_SELF_NAME
 
-The doctor's own container name: it never diagnoses or acts on itself.
+The doctor's own container name, which it never diagnoses or restarts.
 
 **Default:** `container-doctor`
 
@@ -781,6 +781,12 @@ The doctor's own container name: it never diagnoses or acts on itself.
 Settings can be changed on the Settings page by anyone who can sign in; a variable set here always overrides what was saved there. false makes the page read-only.
 
 **Default:** `on` · **Type:** on / off · **Environment only**
+
+### DOCTOR_VERSION
+
+The release, X.Y.Z, for an image the Release workflow built; empty otherwise.
+
+**Default:** `unset` · **Environment only**
 
 ### DOCTOR_WEB_HOST
 
@@ -798,7 +804,7 @@ Address and port the dashboard listens on inside the container.
 
 The user name that password signs in as.
 
-**Default:** `doctor` · **Applies on restart**
+**Default:** `doctor` · **Environment only**
 
 ## Read by the compose file
 
@@ -809,36 +815,51 @@ These never reach the doctor: the reference compose file reads them itself.
 Set to 0 to close the socket proxy's only write route. The doctor then physically cannot restart anything, whatever mode it is in. (This maps to ALLOW_RESTARTS on the proxy; the global POST gate is always off, which is what keeps /containers/create - arbitrary host mounts - out of reach.)
 
 
+### DOCTOR_PROXY_ALLOW_IMAGES
+
+0 denies the read-only GET /images/<name>/json on the proxy; the image update check then says it cannot run.
+
+
+### DOCTOR_DOCKER_HOST
+
+Where the doctor reaches Docker. Point it at a socket proxy you already run (see https://sebastianbuechler.github.io/container-doctor/guides/socket-proxy/, "Reusing yours instead").
+
+
+### COMPOSE_PROFILES
+
+Drive health from the doctor-smart sidecar (Storage page). The sidecar is opt-in, since it has raw disk access: start the stack with `docker compose --profile smart up -d`, or set COMPOSE_PROFILES=smart. "auto" finds the drives; or list their device files, space or comma separated. Give SATA drives their type, /dev/sata1;sat, or smartctl may read a WD as SCSI.
+
+
 ### DOCTOR_SMART_DEVICES
 
-Drive health from the doctor-smart sidecar (Storage page). "auto" finds the drives; or list their device files, space or comma separated. Give SATA drives their type, /dev/sata1;sat, or smartctl may read a WD as SCSI.
-
-
-### DOCTOR_DATA_VOLUME
-
-Where the database lives on the host and who owns it - read by the compose file itself.
-
-
-### DOCTOR_UID
-
-Where the database lives on the host and who owns it - read by the compose file itself.
-
-
-### DOCTOR_GID
-
-Where the database lives on the host and who owns it - read by the compose file itself.
+Drive health from the doctor-smart sidecar (Storage page). The sidecar is opt-in, since it has raw disk access: start the stack with `docker compose --profile smart up -d`, or set COMPOSE_PROFILES=smart. "auto" finds the drives; or list their device files, space or comma separated. Give SATA drives their type, /dev/sata1;sat, or smartctl may read a WD as SCSI.
 
 
 ### DOCTOR_PORT
 
-Read by compose.example.yaml itself: the dashboard's port on the host, and where the database lives there and who owns it.
+Read by compose.example.yaml itself: the dashboard's port on the host, and where the database lives on the host and who owns it. Create the directory and chown it to DOCTOR_UID:DOCTOR_GID before the first start.
+
+
+### DOCTOR_DATA_VOLUME
+
+Read by compose.example.yaml itself: the dashboard's port on the host, and where the database lives on the host and who owns it. Create the directory and chown it to DOCTOR_UID:DOCTOR_GID before the first start.
+
+
+### DOCTOR_UID
+
+Read by compose.example.yaml itself: the dashboard's port on the host, and where the database lives on the host and who owns it. Create the directory and chown it to DOCTOR_UID:DOCTOR_GID before the first start.
+
+
+### DOCTOR_GID
+
+Read by compose.example.yaml itself: the dashboard's port on the host, and where the database lives on the host and who owns it. Create the directory and chown it to DOCTOR_UID:DOCTOR_GID before the first start.
 
 
 ### DOCTOR_IMAGE_TAG
 
-Pin to a specific published image instead of tracking latest, e.g. a sha-<commit> tag from ghcr.io, to roll back or freeze a deploy.
+Pin to a specific published image instead of tracking latest, e.g. X.Y.Z or a sha-<commit> tag from ghcr.io, to roll back or freeze a deploy.
 
 
 ### TZ
 
-Pin to a specific published image instead of tracking latest, e.g. a sha-<commit> tag from ghcr.io, to roll back or freeze a deploy.
+Pin to a specific published image instead of tracking latest, e.g. X.Y.Z or a sha-<commit> tag from ghcr.io, to roll back or freeze a deploy.

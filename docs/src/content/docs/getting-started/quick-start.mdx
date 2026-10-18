@@ -11,7 +11,8 @@ model - Anthropic's, or any OpenAI-compatible one, local models included.
 <Steps>
 
 1. **Get the reference compose file.** It runs the doctor, its socket proxy and
-   an optional SMART sidecar for drive health.
+   an optional SMART sidecar for drive health, which starts only with
+   `--profile smart`.
 
    ```bash
    mkdir container-doctor && cd container-doctor
@@ -26,13 +27,15 @@ model - Anthropic's, or any OpenAI-compatible one, local models included.
    ```
 
 3. **Set the minimum.** Put a model and a dashboard password in a `.env` file
-   next to the compose file:
+   next to the compose file. The password is required - without it (or OIDC)
+   the dashboard refuses every request - and placeholders such as `change-me`
+   are refused; generate one with `openssl rand -base64 24`:
 
    <Tabs syncKey="provider">
    <TabItem label="Anthropic">
    ```ini title=".env"
    ANTHROPIC_API_KEY=sk-ant-...
-   DOCTOR_WEB_PASSWORD=something-long
+   DOCTOR_WEB_PASSWORD=<openssl rand -base64 24>
    ```
    </TabItem>
    <TabItem label="OpenRouter">
@@ -41,7 +44,7 @@ model - Anthropic's, or any OpenAI-compatible one, local models included.
    DOCTOR_OPENAI_BASE_URL=https://openrouter.ai/api/v1
    DOCTOR_OPENAI_API_KEY=sk-or-...
    DOCTOR_MODEL=openai/gpt-6-luna
-   DOCTOR_WEB_PASSWORD=something-long
+   DOCTOR_WEB_PASSWORD=<openssl rand -base64 24>
    ```
    </TabItem>
    <TabItem label="Local (Ollama)">
@@ -49,7 +52,7 @@ model - Anthropic's, or any OpenAI-compatible one, local models included.
    DOCTOR_LLM_PROVIDER=openai
    DOCTOR_OPENAI_BASE_URL=http://ollama:11434/v1
    DOCTOR_MODEL=<a model you have pulled>
-   DOCTOR_WEB_PASSWORD=something-long
+   DOCTOR_WEB_PASSWORD=<openssl rand -base64 24>
    ```
    </TabItem>
    </Tabs>
@@ -59,6 +62,8 @@ model - Anthropic's, or any OpenAI-compatible one, local models included.
    ```bash
    docker compose -f compose.example.yaml up -d
    ```
+
+   Add `--profile smart` to start the SMART sidecar as well.
 
 5. **Open the dashboard** at `http://<host>:8080` and sign in with the password.
 

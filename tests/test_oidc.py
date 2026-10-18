@@ -35,7 +35,7 @@ class StubProvider:
 
     def __init__(self, claims: dict | None = None, userinfo: dict | None = None,
                  offer_userinfo: bool = True) -> None:
-        self.claims = claims or {"preferred_username": "sbuechler", "groups": ["admins"]}
+        self.claims = claims or {"preferred_username": "amorgan", "groups": ["admins"]}
         # Claims served only from the userinfo endpoint, as Pocket ID does
         # with `picture`.
         self.userinfo = userinfo
@@ -154,6 +154,7 @@ class StubProvider:
 
     def stop(self) -> None:
         self.server.shutdown()
+        self.server.server_close()
 
 
 def build_client(provider: StubProvider, **overrides):
@@ -204,6 +205,16 @@ def sign_in(client):
     return client.get(f"/auth/callback?{callback.query.decode()}", follow_redirects=False)
 
 
+# Closed when the module's tests are done; the clients that use them are
+# made in passing, with nothing to close them at the end of each test.
+_STORES: list = []
+
+
+def tearDownModule() -> None:
+    for store in _STORES:
+        store.close()
+
+
 class _StubSupervisor:
     """The API only needs a settings object and a store for these tests."""
 
@@ -212,6 +223,7 @@ class _StubSupervisor:
 
         self.settings = settings
         self.store = Store(os.path.join(tempfile.mkdtemp(), "doctor.db"))
+        _STORES.append(self.store)
         self.docker_connected = False
 
     def status(self):
@@ -240,7 +252,7 @@ class SigningIn(unittest.TestCase):
         self.assertEqual(response.status_code, 303)
 
         after = client.get("/api/me").json()
-        self.assertEqual(after["user"], "sbuechler")
+        self.assertEqual(after["user"], "amorgan")
 
     def test_the_login_redirect_carries_pkce_and_state(self):
         client, _ = build_client(self.provider)
@@ -266,7 +278,7 @@ class SigningIn(unittest.TestCase):
 
     def test_the_avatar_url_is_carried_through_to_the_browser(self):
         provider = StubProvider({
-            "preferred_username": "sbuechler",
+            "preferred_username": "amorgan",
             "groups": ["admins"],
             "picture": "https://id.bchlr.site/api/users/13904a3b/profile-picture.png",
         })
@@ -289,7 +301,7 @@ class SigningIn(unittest.TestCase):
     def test_a_picture_served_only_from_the_userinfo_endpoint(self):
         """The reported bug: Pocket ID keeps `picture` out of the ID token."""
         provider = StubProvider(
-            {"preferred_username": "sbuechler", "groups": ["administrators"]},
+            {"preferred_username": "amorgan", "groups": ["administrators"]},
             userinfo={"picture": "https://id.bchlr.site/api/users/13904a3b/profile-picture.png"},
         )
         self.addCleanup(provider.stop)
@@ -299,7 +311,7 @@ class SigningIn(unittest.TestCase):
         self.assertEqual(
             me["picture"], "https://id.bchlr.site/api/users/13904a3b/profile-picture.png"
         )
-        self.assertEqual(me["user"], "sbuechler")
+        self.assertEqual(me["user"], "amorgan")
 
     def test_the_id_token_still_wins_where_it_has_the_claim(self):
         provider = StubProvider(
@@ -358,7 +370,7 @@ class SigningIn(unittest.TestCase):
     def test_signing_out_clears_the_session(self):
         client, _ = build_client(self.provider)
         sign_in(client)
-        self.assertEqual(client.get("/api/me").json()["user"], "sbuechler")
+        self.assertEqual(client.get("/api/me").json()["user"], "amorgan")
         client.get("/auth/logout", follow_redirects=False)
         self.assertEqual(client.get("/api/me").json()["user"], "")
 
@@ -487,6 +499,7 @@ class StartupProbe(unittest.TestCase):
 
         front = HTTPServer(("127.0.0.1", 0), Redirector)
         threading.Thread(target=front.serve_forever, daemon=True).start()
+        self.addCleanup(front.server_close)
         self.addCleanup(front.shutdown)
 
         warnings = self.supervisor(
@@ -510,6 +523,7 @@ class StartupProbe(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), Refuser)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
 
         warnings = self.supervisor(
@@ -536,6 +550,7 @@ class StartupProbe(unittest.TestCase):
 
         server = HTTPServer(("127.0.0.1", 0), Html)
         threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
         self.addCleanup(server.shutdown)
 
         warnings = self.supervisor(
@@ -583,7 +598,6 @@ class TheSignInCardsProviderDot(unittest.TestCase):
     def test_a_stopped_provider_is_offline_with_the_reason(self):
         provider = StubProvider()
         provider.stop()
-        provider.server.server_close()
         client, _ = build_client(provider)
         answer = client.get("/api/auth/provider").json()
         self.assertFalse(answer["online"])
@@ -610,7 +624,6 @@ class AProviderThatIsDown(unittest.TestCase):
     def test_an_unreachable_provider_is_a_page_that_says_so(self):
         provider = StubProvider()
         provider.stop()
-        provider.server.server_close()
         client, _ = build_client(provider)
         response = client.get("/auth/login", follow_redirects=False)
         self.assertEqual(response.status_code, 502)
@@ -660,7 +673,7 @@ class TheProviderKeepsASay(unittest.TestCase):
     def signed_in(self, **overrides):
         client, settings = build_client(self.provider, **overrides)
         self.assertEqual(sign_in(client).status_code, 303)
-        self.assertEqual(client.get("/api/me").json()["user"], "sbuechler")
+        self.assertEqual(client.get("/api/me").json()["user"], "amorgan")
         return client
 
     def expire(self):
@@ -706,13 +719,13 @@ class TheProviderKeepsASay(unittest.TestCase):
     def test_losing_the_allowed_group_signs_you_out(self):
         self.expire()
         client = self.signed_in(DOCTOR_OIDC_ALLOWED_GROUPS="admins")
-        self.provider.claims = {"preferred_username": "sbuechler", "groups": ["guests"]}
+        self.provider.claims = {"preferred_username": "amorgan", "groups": ["guests"]}
         self.assertEqual(client.get("/api/status").status_code, 401)
 
     def test_new_groups_reach_the_page(self):
         self.expire()
         client = self.signed_in()
-        self.provider.claims = {"preferred_username": "sbuechler", "groups": ["admins", "ops"]}
+        self.provider.claims = {"preferred_username": "amorgan", "groups": ["admins", "ops"]}
         self.assertEqual(client.get("/api/me").json()["groups"], ["admins", "ops"])
 
     def test_a_provider_that_is_down_does_not_sign_you_out(self):
@@ -721,13 +734,12 @@ class TheProviderKeepsASay(unittest.TestCase):
         client = self.signed_in()
         self.provider.token_endpoint_down = True
         self.assertEqual(client.get("/api/status").status_code, 200)
-        self.assertEqual(client.get("/api/me").json()["user"], "sbuechler")
+        self.assertEqual(client.get("/api/me").json()["user"], "amorgan")
 
     def test_a_provider_that_is_gone_does_not_sign_you_out(self):
         self.expire()
         client = self.signed_in()
         self.provider.stop()
-        self.provider.server.server_close()
         self.assertEqual(client.get("/api/status").status_code, 200)
 
     def test_without_a_refresh_token_the_session_ends_with_the_access_token(self):
@@ -751,7 +763,7 @@ class TheProviderKeepsASay(unittest.TestCase):
         from itsdangerous import TimestampSigner
 
         client, _ = build_client(self.provider)
-        legacy = {"doctor_user": {"sub": "user-1", "name": "sbuechler", "groups": []}}
+        legacy = {"doctor_user": {"sub": "user-1", "name": "amorgan", "groups": []}}
         data = base64.b64encode(json.dumps(legacy).encode())
         client.cookies.set("doctor_session",
                            TimestampSigner("test-session-secret").sign(data).decode())
@@ -766,7 +778,7 @@ WINDOWS_FIREFOX = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:143.0) Gecko/201
 @unittest.skipUnless(HAVE_AUTHLIB, "authlib not installed")
 class TheProfilePage(unittest.TestCase):
     def setUp(self):
-        self.provider = StubProvider({"preferred_username": "sbuechler", "given_name": "Sebastian",
+        self.provider = StubProvider({"preferred_username": "amorgan", "given_name": "Alex",
                                       "email": "sb@example.org", "groups": ["admins"]})
         self.addCleanup(self.provider.stop)
         self.client, _ = build_client(self.provider)
@@ -786,7 +798,7 @@ class TheProfilePage(unittest.TestCase):
 
     def test_it_shows_the_identity_and_the_provider(self):
         profile = self.client.get("/api/profile").json()
-        self.assertEqual(profile["user"]["name"], "sbuechler")
+        self.assertEqual(profile["user"]["name"], "amorgan")
         self.assertEqual(profile["claims"]["email"], "sb@example.org")
         self.assertEqual(profile["claims"]["sub"], "user-1")
         self.assertNotIn("nonce", profile["claims"])
@@ -802,18 +814,18 @@ class TheProfilePage(unittest.TestCase):
     def test_a_device_is_named_after_its_owner_and_model(self):
         (only,) = self.sessions()
         self.assertTrue(only["current"])
-        self.assertEqual(only["name"], "Sebastian's Android device")
+        self.assertEqual(only["name"], "Alex's Android device")
         self.assertEqual(only["browser"], "Chrome")
         self.assertTrue(self.client.get("/api/me").json()["profile"])
         self.assertFalse(self.client.get("/api/me").json()["device_reported"])
         self.client.post("/api/profile/device", json={"model": "Pixel 8 Pro", "platform": "Android"})
-        self.assertEqual(self.sessions()[0]["name"], "Sebastian's Pixel 8 Pro")
+        self.assertEqual(self.sessions()[0]["name"], "Alex's Pixel 8 Pro")
         self.assertTrue(self.client.get("/api/me").json()["device_reported"])
 
     def test_every_session_is_listed(self):
         self.another_device()
         names = sorted(item["name"] for item in self.sessions())
-        self.assertEqual(names, ["Sebastian's Android device", "Sebastian's Windows PC"])
+        self.assertEqual(names, ["Alex's Android device", "Alex's Windows PC"])
         self.assertEqual(sum(item["current"] for item in self.sessions()), 1)
 
     def test_ending_another_session_signs_that_device_out(self):
@@ -842,7 +854,7 @@ class TheProfilePage(unittest.TestCase):
         self.client.put(f"/api/profile/sessions/{mine['id']}/name", json={"name": "  Work  phone "})
         self.assertEqual(self.sessions()[0]["name"], "Work phone")
         self.client.put(f"/api/profile/sessions/{mine['id']}/name", json={"name": ""})
-        self.assertEqual(self.sessions()[0]["name"], "Sebastian's Android device")
+        self.assertEqual(self.sessions()[0]["name"], "Alex's Android device")
 
     def test_an_unknown_session_is_404(self):
         self.assertEqual(self.client.post("/api/profile/sessions/0000000000000000/end").status_code, 404)
@@ -864,21 +876,21 @@ class NamingDevices(unittest.TestCase):
     def describe(self, **kwargs):
         from app.web import devices
 
-        return devices.describe(owner="Sebastian", **kwargs)
+        return devices.describe(owner="Alex", **kwargs)
 
     def test_a_model_from_client_hints_wins(self):
         self.assertEqual(self.describe(user_agent=PIXEL, model="Pixel 8 Pro")["name"],
-                         "Sebastian's Pixel 8 Pro")
+                         "Alex's Pixel 8 Pro")
 
     def test_without_one_the_kind_of_device(self):
         cases = {
-            PIXEL: ("Sebastian's Android device", "Chrome"),
-            WINDOWS_FIREFOX: ("Sebastian's Windows PC", "Firefox"),
+            PIXEL: ("Alex's Android device", "Chrome"),
+            WINDOWS_FIREFOX: ("Alex's Windows PC", "Firefox"),
             "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 "
             "(KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1":
-                ("Sebastian's iPhone", "Safari"),
+                ("Alex's iPhone", "Safari"),
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like "
-            "Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0": ("Sebastian's Mac", "Edge"),
+            "Gecko) Chrome/141.0.0.0 Safari/537.36 Edg/141.0.0.0": ("Alex's Mac", "Edge"),
         }
         for user_agent, (name, browser) in cases.items():
             with self.subTest(name=name):
@@ -897,8 +909,8 @@ class NamingDevices(unittest.TestCase):
     def test_the_owner_is_called_by_their_first_name(self):
         from app.web import devices
 
-        self.assertEqual(devices.first_name({"name": "Sebastian Büchler"}), "Sebastian")
-        self.assertEqual(devices.first_name({"given_name": "Seb", "name": "Sebastian B"}), "Seb")
+        self.assertEqual(devices.first_name({"name": "Alex Morgan"}), "Alex")
+        self.assertEqual(devices.first_name({"given_name": "Al", "name": "Alex M"}), "Al")
         self.assertEqual(devices.first_name({"preferred_username": "sb"}), "sb")
 
 
