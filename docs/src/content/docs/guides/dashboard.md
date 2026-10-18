@@ -154,7 +154,7 @@ The colour theme is chosen there too, and remembered per browser.
 
 ## From a notification to the incident
 
-With `DOCTOR_PUBLIC_URL` set — it already is, for sign-in — every ntfy
+With `DOCTOR_PUBLIC_URL` set — OIDC sign-in needs it anyway — every ntfy
 notification opens the incident it is about rather than the top of the
 dashboard, and carries a button: **Review and approve** when an action is
 waiting, **Open incident** otherwise. The incident is opened, scrolled to and

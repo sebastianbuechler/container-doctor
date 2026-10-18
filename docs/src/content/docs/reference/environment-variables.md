@@ -82,7 +82,7 @@ The machine itself. auto tells a Synology NAS from any other Linux by its kernel
 
 ### DOCTOR_LLM_PROVIDER
 
-Set DOCTOR_LLM_PROVIDER=openai and point at any OpenAI-compatible endpoint. The base URL can only be set here, never from the Settings page, since the API key is sent to it. Verify it in one command before you rely on it: docker compose exec container-doctor python -m app.selftest  Free tiers, limits and prices below are as of October 2026 - check the vendor's page, these change often.  Google Gemini - free tier, no card. See docs/guide.md ("Free options, ranked") for the privacy caveat: free-tier inputs may be used for training.
+Set DOCTOR_LLM_PROVIDER=openai and point at any OpenAI-compatible endpoint. The base URL can only be set here, never from the Settings page, since the API key is sent to it. Verify it in one command before you rely on it: docker compose exec container-doctor python -m app.selftest  Free tiers, limits and prices below are as of October 2026 - check the vendor's page, these change often.  Google Gemini - free tier, no card. See https://sebastianbuechler.github.io/container-doctor/guides/models/ ("Free options, ranked") for the privacy caveat: free-tier inputs may be used for training.
 
 **Default:** `anthropic` · **One of:** `anthropic`, `openai` · **Applies on restart**
 
@@ -822,7 +822,7 @@ Set to 0 to close the socket proxy's only write route. The doctor then physicall
 
 ### DOCTOR_DOCKER_HOST
 
-Where the doctor reaches Docker. Point it at a socket proxy you already run (see docs/guide.md, "Already running a socket proxy?").
+Where the doctor reaches Docker. Point it at a socket proxy you already run (see https://sebastianbuechler.github.io/container-doctor/guides/socket-proxy/, "Reusing yours instead").
 
 
 ### COMPOSE_PROFILES

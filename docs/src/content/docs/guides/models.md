@@ -48,14 +48,33 @@ Two things keep the bill small:
   — a disk going from 92% to 96% — always opens its own incident, so an
   escalation is never folded into a row you have already read.
 
-On top of that, `DOCTOR_DAILY_USD_BUDGET` is a hard stop: once today's spend
-reaches it, incidents are still detected, recorded and notified — they just
-aren't diagnosed until tomorrow. The dashboard shows spend against the cap.
+On top of that, `DOCTOR_DAILY_USD_BUDGET` stops new calls once today's
+recorded spend reaches it: incidents are still detected, recorded and notified
+— they just aren't diagnosed until tomorrow. A manual **Re-diagnose** counts
+against the same budget. It is a threshold on recorded spend, not a hard cap:
+spend is recorded when a call returns, so calls already in flight can
+overshoot it slightly. For an absolute ceiling, set a credit or spend limit
+with the provider itself. The dashboard shows spend against the cap.
 
-The default model is `claude-opus-5`, but the provider is pluggable: set
+The default model is `claude-opus-5-5`, but the provider is pluggable: set
 `DOCTOR_LLM_PROVIDER=openai` and point `DOCTOR_OPENAI_BASE_URL` at any
 OpenAI-compatible endpoint. That covers most of the market, including Google's
-own Gemini endpoint.
+own Gemini endpoint. `DOCTOR_OPENAI_BASE_URL` is set in the stack environment
+only, since the API key is sent there.
+
+The spend meter prices these Anthropic models from a built-in table, in USD
+per million tokens:
+
+| Model | Input | Output |
+|---|---|---|
+| `claude-opus-5-5` (default) | $4 | $20 |
+| `claude-sonnet-5-5` | $2 | $10 |
+| `claude-haiku-5-5` | $0.10 | $0.50 |
+| `claude-fable-5` | $10 | $50 |
+
+A smaller model is usually plenty for `DOCTOR_BRIEFING_MODEL`. For any other
+model, set the prices yourself; see
+[Metering a non-Anthropic vendor](#metering-a-non-anthropic-vendor).
 
 ### Testing a vendor in 30 seconds
 
@@ -89,12 +108,15 @@ self-test flags that for you.
 
 ### Free options, ranked
 
+Limits and terms as of October 2026 — check the vendor's page, these change
+often.
+
 | Vendor | Cost | Limits | Notes |
 |---|---|---|---|
 | **Google Gemini** | Free, no card | 10 RPM / 1,500 RPD on Gemini 3 Flash; 2.5 Pro is 50 RPD | **Start here.** Frontier-tier vendor, and the OpenAI-compatible endpoint means no code change. See the privacy caveat below. |
 | **OpenRouter** | `:free` variants cost nothing; paid models are cheap | 20 RPM; 50 RPD under $10 of credits, 1,000 RPD above (free variants only) | Best for *comparing* vendors — one key, swap `DOCTOR_MODEL` to A/B them. A cheap paid model avoids the free-tier rate limits and still costs cents a month here; see below. |
 | **Groq** | Free, no card | 30 RPM / 1,000 RPD | Fastest by a distance, but open-weight models (`gpt-oss`, Qwen) rather than frontier ones. |
-| **Local (Ollama)** | Free forever | Your hardware | Nothing leaves the house. A Synology is usually too slow for a model big enough to diagnose well — good for the paranoid case, not the quality case. |
+| **Local (Ollama)** | Free forever | Your hardware | Nothing leaves your network. A NAS is usually too slow for a model big enough to diagnose well — the choice for privacy rather than quality. |
 
 Rate limits are not the constraint you might expect. This tool only calls a
 model when a rule has *already* decided something is wrong, and identical
@@ -103,7 +125,7 @@ Gemini's free 1,500/day is roughly two orders of magnitude more headroom than
 a homelab needs.
 
 :::caution
-**Privacy caveat, and it matters here.** Google may use free-tier inputs and
+**Privacy caveat, and it matters here.** As of October 2026, Google may use free-tier inputs and
 outputs to improve its models. This tool sends container log tails — redacted,
 but still yours. If that's not acceptable, use a paid tier (Gemini paid or
 Vertex AI don't train on your data), or run locally. Weigh it knowing what's
@@ -126,8 +148,8 @@ DOCTOR_PRICE_OUT_PER_MTOK=0.50
 ```
 
 One incident is roughly 1,450 input and 190 output tokens, so about
-**$0.00024** — a hundred incidents in a month is two and a half cents. Prices
-move; check the model page and update the two `_PER_MTOK` values so the
+**$0.00024** — a hundred incidents in a month is two and a half cents. These
+prices are as of October 2026 and move often; check the model page and update the two `_PER_MTOK` values so the
 dashboard meter stays honest.
 
 Run `python -m app.selftest` after switching. It prints which request shape the
@@ -169,12 +191,13 @@ constrain you to the well-behaved ones:
   models that would reject them.
 - Unsupported parameters are dropped **one at a time**, so a vendor that
   refuses only `temperature` keeps its schema enforcement. That matters for
-  reasoning models: GPT-6 Luna rejects `temperature` at any reasoning effort
-  above `none`, but does support structured outputs — dropping both would give
+  reasoning models: GPT-6 Luna (as of October 2026) rejects `temperature` at
+  any reasoning effort above `none`, but does support structured outputs — dropping both would give
   away the schema guarantee for no reason. Set `DOCTOR_LLM_TEMPERATURE=-1` to
   skip the extra round trip once you know your model refuses it.
 
 Whatever the vendor returns still goes through the same coercion: an action
-outside the enum becomes `notify_only`, and confidence is clamped. A weaker
+outside the enum becomes `notify_only`, and confidence is clamped (NaN or
+infinity reads as 0). A weaker
 model can give you a worse *diagnosis*; it cannot widen what the doctor is
 allowed to do.

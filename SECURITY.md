@@ -85,5 +85,5 @@ Out of scope:
   The password is HTTP Basic auth: beyond a trusted LAN, put a reverse proxy
   with TLS in front of it.
 
-The [security notes](docs/guide.md#security-notes) in the guide go into each
-of these.
+The [Security](https://sebastianbuechler.github.io/container-doctor/guides/security/) page of the documentation goes into
+each of these.

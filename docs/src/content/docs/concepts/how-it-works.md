@@ -115,8 +115,17 @@ same allowance. An action that loses the reservation stays pending for approval,
 with the current circuit-breaker or cooldown reason recorded.
 
 Failing any of these turns the action into a pending approval with the reason
-written out, rather than silently dropping it.
+written out, rather than silently dropping it. A confidence the model returns
+as NaN or infinity is read as 0.
+
+**Approving it yourself** runs it regardless of the circuit breakers and the
+cooldown: they stop the doctor repeating itself, not you. The same goes for a
+manual restart or stop from the dashboard. The doctor's own containers and the
+ignore list are still refused. An approval is claimed atomically, so an action
+runs at most once however many times it is approved, and the approver is
+recorded as its decider.
 
 After a restart the doctor waits `DOCTOR_VERIFY_DELAY` seconds and re-checks the
-container. If it's still not healthy, the incident is marked **failed** and you
-get a notification — it does not try again on its own.
+container; after `stop_container` it checks that the container is actually
+stopped. If the check fails, the incident is marked **failed** and you get a
+notification — it does not try again on its own.

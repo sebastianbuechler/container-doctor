@@ -24,7 +24,8 @@ network that nothing else can reach.
 
 :::caution
 **One subtlety worth knowing:** the doctor is attached to both its private
-network *and* a second one (the reverse proxy's, or its way out), and Docker's
+network (`doctor_internal`) *and* a second one (`doctor_external`, or the
+reverse proxy's network you join it to), and Docker's
 DNS resolves names across **every** attached network. A proxy named
 `docker-socket-proxy` sitting on that shared network could therefore
 answer instead of the intended one. The bundled proxy is reached by the
@@ -60,13 +61,13 @@ change on the shared proxy to make it work.**
   seems to need it, the preflight will tell you what is actually missing, and
   it is almost always `ALLOW_LOGS`.
 
-Whichever you pick, don't guess what yours permits — ask. Once the doctor image
-exists you can probe any endpoint without changing the stack:
+Whichever you pick, don't guess what yours permits — ask. You can probe any
+endpoint with the published image, without changing the stack:
 
 ```bash
 docker run --rm --network <your-proxy-network> \
   -e DOCKER_HOST=tcp://your-existing-proxy:2375 \
-  container-doctor:local python -m app.preflight
+  ghcr.io/sebastianbuechler/container-doctor:latest python -m app.preflight
 ```
 
 or, on a deployed stack:

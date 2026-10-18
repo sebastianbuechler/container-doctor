@@ -41,7 +41,7 @@ but never create one, and it needs no mount of your data.
   password is HTTP Basic auth, so never expose the dashboard beyond your LAN
   without a reverse proxy with TLS in front of it.
 
-More in the guide's [security notes](docs/guide.md#security-notes); to report
+More on the docs site's [Security](https://sebastianbuechler.github.io/container-doctor/guides/security/) page; to report
 a vulnerability, see [SECURITY.md](SECURITY.md).
 
 ## Requirements

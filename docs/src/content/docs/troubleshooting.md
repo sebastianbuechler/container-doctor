@@ -49,3 +49,6 @@ backend restarts, mean the settle window is too short for that stack: raise
 Its `reason` in the action log says why —
 usually a circuit breaker or a confidence below the threshold. That's the system
 working; deal with the underlying problem rather than raising the limits.
+Approving it yourself runs it regardless: the circuit breaker and the cooldown
+stop the doctor repeating itself, not you. An action runs at most once, however
+many times it is approved, and the approver is recorded as its decider.

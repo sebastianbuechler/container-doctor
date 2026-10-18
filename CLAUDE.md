@@ -7,7 +7,7 @@ the documentation site (Astro Starlight) in `docs/`.
 ## Commands
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt -r requirements-dev.txt   # dev adds what the tests need
 python -m unittest discover -s tests          # all tests, no Docker needed
 python scripts/gen_docs.py                    # regenerate the env var reference
 cd docs && npm ci && npm run build            # build the docs; fails on broken links
