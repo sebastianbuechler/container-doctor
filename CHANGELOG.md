@@ -6,6 +6,22 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-18
+
+### Upgrading from 0.1.0
+
+- **Configure sign-in**: without `DOCTOR_WEB_PASSWORD` (12 characters or
+  more, not a placeholder) or OIDC, the dashboard and API refuse every request.
+- **Check the data directory's owner**: the image runs as `1000:1000`. If
+  yours is owned by `1026:100`, set `DOCTOR_UID=1026` and `DOCTOR_GID=100`, or
+  `chown -R 1000:1000` it.
+- **Move environment-only settings** you saved on the Settings page into the
+  stack environment (the list is under *Security* below); saved values for
+  them are no longer read.
+- **Set `DOCTOR_NTFY_TOPIC`** if you use ntfy; it no longer has a default.
+- **Add `--profile smart`** (or `COMPOSE_PROFILES=smart`) to keep the SMART
+  sidecar from `compose.example.yaml`.
+
 ### Security
 
 - With neither `DOCTOR_WEB_PASSWORD` nor OIDC configured, the dashboard and
@@ -79,3 +95,6 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
+
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.1.0...v0.2.0
