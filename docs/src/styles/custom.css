@@ -1,0 +1,12 @@
+/* The dashboard's own accent (app/web/static/styles.css), so the docs and the
+   app read as one product. */
+:root {
+  --sl-color-accent-low: #184f95;
+  --sl-color-accent: #3987e5;
+  --sl-color-accent-high: #cde2fb;
+}
+:root[data-theme='light'] {
+  --sl-color-accent-low: #cde2fb;
+  --sl-color-accent: #2a78d6;
+  --sl-color-accent-high: #184f95;
+}

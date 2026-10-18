@@ -1034,7 +1034,7 @@ def build_app(supervisor: Supervisor, settings: Settings,
     ) -> dict[str, Any]:
         """A tail fetched now, rather than the one frozen at detection.
 
-        Not a log browser - see docs/guide.md. Redaction applies as everywhere
+        Not a log browser - see guides/investigating in the docs. Redaction applies as everywhere
         else, so a secret in a log line does not reach the page.
         """
         result = await supervisor.container_logs(container_name, lines=max(1, min(lines, 2000)))

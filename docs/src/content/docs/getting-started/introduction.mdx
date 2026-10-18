@@ -1,0 +1,74 @@
+---
+title: "Introduction"
+description: "What Container Doctor is, what it does on its own, and what it never does without you."
+---
+
+import { Image } from 'astro:assets';
+import { CardGrid, LinkCard } from '@astrojs/starlight/components';
+import light from '../../../assets/how-it-works-light.svg';
+import dark from '../../../assets/how-it-works-dark.svg';
+
+Container Doctor is an AI triage agent for the Docker containers on one Linux
+host. It watches the Docker event stream and container stats, opens an
+**incident** when a deterministic rule says something is genuinely wrong, asks a
+model to explain *why*, and - only if you let it - applies one narrow
+remediation and checks whether that actually helped. Everything it sees, thinks
+and does is visible in a web dashboard.
+
+<Image src={light} alt="Rules watching the containers open an incident; evidence is gathered with secrets redacted; a model explains the failure and proposes one of five fixed actions, advisory only; a deterministic policy engine then notifies you, waits for approval, or restarts and verifies." class="dark:sl-hidden" />
+<Image src={dark} alt="" aria-hidden="true" class="light:sl-hidden" />
+
+The shape of it: **rules decide whether something is wrong, a model only
+explains why, and plain deterministic code decides what - if anything - happens
+next.** The model's output is constrained to five fixed actions. In `observe`
+and `suggest` it is advisory only, so a bad diagnosis costs you a wrong
+explanation, not a restart. In `auto` mode the doctor does trust the model's
+recommendation - but only within the allowed actions, the confidence
+threshold and the rate limits, and only on the incident's own container.
+
+It runs as a Compose stack of its own, deployed however you deploy the rest:
+it reads Docker and Compose's own labels, whatever started the containers.
+Docker itself is reached only through a socket proxy that lets the doctor
+restart a container but never create one - `POST /containers/create` accepts
+arbitrary host bind mounts, so an open create endpoint is a container escape.
+
+## What you get
+
+- **Incidents, not alerts.** Crashes, restart loops, failing health checks,
+  OOM kills, error bursts in the logs, full or filling disks, degraded RAID
+  arrays, failing drives, an unreachable internet - each opened once, folded
+  while it recurs, and closed when it clears.
+- **An explanation for each.** A model reads the evidence - logs with secrets
+  redacted, the container's configuration and what changed, its stack's
+  neighbours, the host's state - and says what went wrong and what would fix it.
+- **Actions only on your terms.** `observe` changes nothing, `suggest` asks you
+  first, `auto` acts only where you allowed it, inside rate limits and
+  cooldowns, and verifies the result.
+- **The rest of the picture.** Image updates with release notes, a network map,
+  memory-limit suggestions, a change log per container, SMART and RAID health.
+
+## Design choices
+
+The idea comes from ["Docker Container Doctor"][post]. That write-up is a good
+proof of concept, but a few things in it don't survive contact with a home server
+that holds your photos. This implementation changes them deliberately:
+
+| The usual pattern | What this does instead | Why |
+|---|---|---|
+| Mount `/var/run/docker.sock` into the agent | Talks to a [socket proxy][proxy] with a narrow endpoint allowlist, as a non-root user, with a read-only root filesystem | The raw socket is root on the host. An LLM-driven process is the last thing that should hold it |
+| The LLM decides the fix and the code runs it | The LLM picks one action from a **closed enum**; a deterministic policy engine decides whether it may run | Prompt injection via a container log must not become "restart my database" |
+| Call the model on anything that looks odd | Rules open the incident; the model only ever explains an incident that already exists | The model is the expensive, non-deterministic part. Keep it off the critical path |
+| Call the model every time | Identical failures are fingerprinted and reuse a cached diagnosis; a daily USD budget stops new calls | A restart loop would otherwise bill you once per restart |
+| Send the logs as-is | Secrets are redacted, best effort, before evidence is stored *or* sent | Plenty of apps take bearer tokens as env vars, and they end up in logs |
+| Restart on failure | Circuit breakers per container and per host, a per-fingerprint cooldown, and post-action verification | "Restart it again" is how a small problem becomes an outage |
+| Auto-fix from day one | Ships in `observe` mode. `suggest` and `auto` are opt-in | You should read a week of its diagnoses before it gets to touch anything |
+
+[post]: https://www.freecodecamp.org/news/docker-container-doctor-how-i-built-an-ai-agent-that-monitors-and-fixes-my-containers/
+[proxy]: https://github.com/linuxserver/docker-socket-proxy
+
+## Next steps
+
+<CardGrid>
+  <LinkCard title="Quick start" description="Running in five minutes with the reference compose file." href="/container-doctor/getting-started/quick-start/" />
+  <LinkCard title="How it works" description="The pipeline from a signal to an action." href="/container-doctor/concepts/how-it-works/" />
+</CardGrid>

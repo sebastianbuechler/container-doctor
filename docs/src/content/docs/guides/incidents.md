@@ -1,0 +1,105 @@
+---
+title: "Incidents and noise"
+description: "How redeploys, log levels and recurring warnings are told apart from real failures."
+---
+
+An incident is only worth your attention if something is really wrong. These
+are the ways the doctor tells a real failure from the everyday noise of a busy
+host: a redeploy is not an outage, a log's level counts for more than a word in
+it, and a run of false alarms can be cleared in one go.
+
+## Redeploys are not outages
+
+Redeploying a stack stops the old containers, sometimes with exit 137 or 143
+when the app is slow to shut down. For the minute a redeploy takes, everything
+that talks to those containers logs errors: a reverse proxy, a tunnel like
+newt, a frontend. None of that opens an incident:
+
+- **A requested stop is not a crash.** `docker stop`, Compose and managers
+  signal a container before it exits, and Docker reports that as a `kill`
+  event. A crash has no `kill`. An exit that follows one is ignored, whatever
+  the exit code, and so is a poll that later finds that container stopped.
+- **A container replaced is a redeploy.** A non-zero exit with no `kill` first
+  waits `DOCTOR_DIE_GRACE_SECONDS` (default 30). If a new container with the
+  same name exists by then, or the old one has been removed, it was a
+  redeploy. If the same container is still lying there exited, it is a crash
+  and opens an incident as before.
+- **Errors logged during a redeploy are not counted.** Any stop, `destroy` or
+  `create` opens a settle window, from 90 seconds before to
+  `DOCTOR_DEPLOY_SETTLE_MINUTES` after (default 3). Log lines stamped inside
+  it are dropped before the burst is counted, on every container. A failing
+  health check waits until the window closes, and is reported then if the
+  container is still unhealthy. Errors logged *after* the window count as
+  usual, so a redeploy that really broke something still opens an incident.
+  `0` turns the window off.
+
+## Reading log severity
+
+Log rules run twice over the same tail, because neither question alone is
+enough:
+
+- **By level.** Most containers put a severity on the line, and the doctor
+  reads it rather than guessing from wording. All four formats in `arr-stack`
+  are understood — Serilog's `[ERR]`/`[FTL]`, NLog's `|Error|`, SABnzbd's
+  `::ERROR::`, winston's `error:` — so a failure phrased unusually is still
+  caught. JSON lines are read by their `level` field instead (`"level":"ERROR"`
+  from Pocket ID's `LOG_JSON=true`, pino's numeric `50`/`60`), so words in the
+  message or an `error` field never decide the level. A `FATAL` opens an incident on its own; `ERROR` only in volume,
+  since one error line is weak evidence.
+- **By keyword.** `DOCTOR_LOG_ERROR_PATTERN` still matches on wording, which
+  covers containers that log no level at all.
+
+A fatal supersedes an error burst, so you get one incident naming the real
+problem rather than two.
+
+**Silencing known noise.** Some containers emit errors that mean nothing.
+Jellyfin's `StudiosImageProvider` fails whenever it can't reach GitHub for
+studio logos, which is cosmetic. Per container:
+
+```yaml
+labels:
+  - doctor.ignore_log=StudiosImageProvider|TrailerProvider
+```
+
+Matching lines are dropped *before* counting, so suppression can't hide the
+count that should have paged you — and **a `FATAL` still gets through**, which
+is what makes the label safe to hand out. `DOCTOR_LOG_IGNORE_PATTERN` does the
+same globally, but prefer the label: noise is usually one container's habit.
+
+**A line's level is its own, not any level word in the message.** The scan
+reads the *first* level token on a line, benign ones included, so Stirling-PDF's
+`INFO ... Resource status changed from OK to CRITICAL` is an INFO line rather
+than a fatal. Only knowing the alarming words meant reading past `INFO` and
+finding `CRITICAL` in the prose.
+
+**Old lines are not news.** `docker logs --tail` reaches back as far as the
+container has been running, so a database that logs almost nothing was still
+serving `FATAL` lines from 2025 to a poll in 2026. Lines older than
+`DOCTOR_LOG_MAX_AGE_MINUTES` (default 60) are never fetched. Set it to `0` to
+read the whole tail.
+
+**A line is news once.** The window is re-read every poll, so one `FATAL` used to
+be a fresh sighting on every poll for an hour — authentik's single gunicorn
+`WORKER TIMEOUT` was "seen 78 times" — and could reopen an incident someone had
+just closed. The doctor now remembers, per container, Docker's timestamp of the
+newest line it has read (kept in SQLite, so a restart of the doctor does not
+read the last hour as news). A fatal fires only on lines newer than that. A burst
+is still counted over the whole window, but needs at least one new matching line
+to fire or to count as another sighting.
+
+**Access logs are judged by status code, never by words in the URL.** A reverse
+proxy records the request it served, so Traefik in front of a log viewer logs
+the viewer's own `?levels=error&levels=fatal` query verbatim — words that
+describe what the client asked for, not how the proxy is doing. Any line in
+access-log form is scored on its status instead: a burst of 5xx counts as
+errors, and everything below 500 is ignored whatever the URL says. Traefik
+runs with `--accesslog.format=json`, so its lines are read by `DownstreamStatus`
+rather than by their `"level": "info"`; the common log format still works.
+
+## Clearing out a run of false alarms
+
+**Dismiss all open** in the incidents panel closes every open incident at once —
+for after a rule that was raising them has been fixed, where clicking through a
+few hundred is not an option. They are dismissed rather than deleted: the rows
+stay in the record, age out at `DOCTOR_RETENTION_DAYS` (default 30), and a
+deleted incident would take its audit trail of actions with it.

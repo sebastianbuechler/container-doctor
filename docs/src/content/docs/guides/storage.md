@@ -1,0 +1,200 @@
+---
+title: "Disks and RAID"
+description: "Fill forecasts, SMART drive health, and md arrays - including Synology's SHR layout."
+---
+
+Disks are where a host fails slowly and then all at once. The doctor watches
+how fast each one fills, each drive's SMART health, and the state of every
+software RAID array - including Synology's SHR layout.
+
+## How fast, not just how full
+
+"92% full" is close to useless on a host. It can sit there for a year or be gone
+by Friday and the number reads the same either way, so the threshold gets moved
+and nothing is answered.
+
+One sample per path per hour, least squares over the last fortnight, and two
+figures that do answer it: a rate and a date. *"/data is filling at 3.7 GiB/day
+— full in about 31 days"* is a decision. *"92% full"* is a shrug.
+
+- **Least squares over the window**, not first-to-last, so a restart that frees a
+  few gigabytes bends the line instead of resetting it.
+- **Projected from the most recent reading**, not the fitted one, because the
+  question is how long from *now*.
+- **A trickle is not a trend.** Under a megabyte a day is treated as no movement
+  rather than extrapolated to a date three centuries out.
+- **Samples are bucketed hourly**, so polling every 30 seconds does not become
+  2880 rows a day.
+- **Full means no free space left**, the way the percentage counts it. The
+  filesystem's raw total also holds the blocks reserved for root, which no
+  container will ever fill, so projecting to it promised days that do not exist.
+
+The **Storage** panel draws it: two weeks of samples, and a dashed line carrying
+the fitted rate forward from the latest reading to capacity or as far ahead as
+the history reaches back, whichever comes first. Hover or tap for any hour's
+reading; *Show as a table* lists the last reading of each day.
+
+`disk_filling` is a separate rule from `host_disk_pressure` on purpose: a disk
+can be 60% full and gone by Friday, or 92% full and stable for years. Only the
+forecast rule fires on the first; only the threshold rule fires on the second.
+
+| Variable | Default | What it does |
+|---|---|---|
+| `DOCTOR_DISK_FORECAST_DAYS` | `21` | How far ahead is worth an incident |
+| `DOCTOR_DISK_FORECAST_CRITICAL_DAYS` | `5` | Inside this, the incident is critical |
+| `DOCTOR_DISK_TREND_WINDOW_DAYS` | `14` | How much history the line is fitted to |
+| `DOCTOR_DISK_SAMPLE_MINUTES` | `60` | One stored reading per path per bucket |
+| `DOCTOR_RAID_ERRORS_PER_DAY` | `10` | New corrected read errors on one drive within 24 hours that make its warning critical; `0` never escalates |
+| `DOCTOR_RAID_ERRORS_DAYS` | `7` | How long a drive warns after its last newly corrected read error |
+
+It takes four samples to draw a line, so a freshly deployed doctor says nothing
+about trends for the first few hours. That is the correct answer, not a gap.
+
+## Drive health
+
+The **Drive health** panel on the Storage page shows each drive's own account
+of itself, read with smartctl: health verdict, temperature, age, and the
+counters that move first on a failing drive.
+Each drive's temperature is kept too, at the Host charts' resolution, and
+charted in the drive's details. It costs the drives nothing: the sidecar
+reads SMART every five minutes anyway and skips a drive that is asleep, so
+history never keeps a disk from spinning down.
+
+| Drive | Warning | Critical |
+|---|---|---|
+| Hard disk | Any reallocated, pending, offline-uncorrectable or reported-uncorrectable sector; new interface CRC errors; at 55 °C or more | It reports itself as failing |
+| NVMe | Media errors; 90% of its rated endurance used; at 70 °C or more | A controller critical warning; spare capacity at or below its threshold |
+
+CRC errors point at the cable or the bay, not the disk, and a drive keeps its
+count forever. So the first count seen is the baseline, and only new ones are
+reported. Each drive gets one incident however its numbers move. It closes
+once nothing is wrong with the drive any more, for example once pending
+sectors have been remapped. Drives are read every five minutes, and a drive
+asleep is skipped rather than woken.
+
+**The sidecar.** Reading SMART takes raw access to the disks, and the doctor
+deliberately has none. A second container in this stack, `doctor-smart`,
+does that and nothing else. It runs the upstream
+[`smartctl_exporter`](https://github.com/prometheus-community/smartctl_exporter)
+unchanged, and the doctor reads its metrics page over the internal network.
+It is set up as follows:
+
+- `CAP_SYS_RAWIO` to send SMART commands. `CAP_SYS_ADMIN` too, because NVMe
+  answers through its admin command set; drop it if you have no NVMe drives.
+- The host's `/dev`, read-only, with a device cgroup rule allowing block
+  devices. smartctl opens a drive read-write to talk to it.
+- Every other capability dropped, a read-only filesystem, no published port,
+  and only the doctor's internal network, so no route out.
+
+That is still raw access to the disks, so it is the one container here that
+could read them. Keeping it to a stock image with no network beyond the
+doctor is the containment.
+
+It finds the drives itself: DSM's `sataN` bays and NVMe drives, or `sdX` on
+older models. If they are not found, list them with `DOCTOR_SMART_DEVICES`,
+for example `/dev/sata1;sat /dev/sata2;sat`. `DOCTOR_SMART_URL=` (empty) turns
+drive health off.
+
+The `sataN` bays are read as SATA (`;sat`), not left to smartctl to guess. DSM
+reports the first word of a drive's model as its vendor, so every Western
+Digital (`WDC WD60EFRX-...`) looks like a SCSI disk from vendor "WDC", and
+smartctl's guess reads only its identity: no verdict, no counters, a
+temperature of 0. A Seagate (`ST6000VN001-...`, no space) comes through as
+vendor "ATA" and is guessed right. A drive read that way shows *no data* on
+the Storage page, never *healthy*.
+
+## When a disk drops out of the array
+
+A degraded array is the failure on a storage host that loses data, and it is invisible
+to everything else the doctor watches: every container runs on one disk exactly
+as it did on two, right up to the moment the second one goes too.
+
+Linux software RAID is md arrays - and so is every DSM volume, SHR included -
+and the kernel reports their state in `/proc/mdstat`. That file is readable from inside the
+container with **no mount and no privilege** — md state is kernel-wide rather
+than per namespace, so a container sees the host's arrays — and the doctor reads
+it on every poll.
+
+| What it sees | Incident |
+|---|---|
+| A member marked `(F)` | critical — the kernel has failed that disk out |
+| `[2/1] [U_]` on a data array | critical — a disk is missing |
+| `recovery` or `reshape` running | warning, with progress and time left — a replacement is going in, but it is one failure from data loss until done |
+| `check` (a scrub) or a resync with every disk present | nothing — shown in the panel, routine |
+
+The awkward part, on a Synology, is **md0 and md1**, DSM's system and swap
+arrays. DSM sizes
+them for every bay the model could have, so a two-disk four-bay unit shows
+`[4/2] [UU__]` there forever. For those the doctor remembers the most disks it
+has seen each array with — in SQLite, so a disk lost while the doctor was down
+does not quietly become the new normal — and only a drop below that counts.
+This applies only on a Synology (detected, or `DOCTOR_HOST_KIND=synology`): on
+any other host md0 is an ordinary array, often the data one, and an empty slot
+there is degraded like anywhere else.
+
+The incident closes itself the poll the array is whole again, with a
+notification saying so. The doctor never acts on one: whatever the diagnosis
+proposes, it is recorded as notify-only, because a restart cannot bring a disk
+back and a prune only adds load to the disks that are left. `DOCTOR_MDSTAT_PATH`
+points elsewhere or, set to `off`, turns the check off; a host without software
+RAID (or a Synology with a single Basic volume) has no arrays and the panel says
+so once.
+
+### Why one volume shows several arrays
+
+On a Synology, SHR on drives of different sizes is not one RAID. DSM cuts every
+drive into
+slices, builds a separate md array across each layer of slices, and joins them
+with LVM into one volume. Seven 6 TB drives and one 3 TB drive make:
+
+| Array | What it is |
+|---|---|
+| `md2` | raid5 across the first 3 TB of **all 8** drives |
+| `md3` | raid5 across the rest of the **7** larger drives — the small one has nothing left |
+| `md0`, `md1` | DSM's system and swap, raid1 on every drive |
+
+mdstat alone cannot tell that apart from three volumes, so the doctor also reads
+`/sys`, which Docker mounts read-only in every container. Its block devices are
+the host's, and the files are world-readable, so this needs no mount and no
+privilege either:
+
+| From | Shown as |
+|---|---|
+| `/sys/block/mdN/holders`, `…/slaves`, `…/dm/name` | the arrays grouped under the volume they make up (`vg1-volume_1` → *Volume 1*, *layer 1 of 2*), with the watched path on it, found through `/proc/self/mountinfo` |
+| `/sys/block/sataN/size`, `…/device/model` | the drive bay, size and model behind each member, and why a layer has fewer drives |
+| `/sys/block/mdN/md/mismatch_cnt` after a `check` | a `raid_errors` warning if the last scrub found sectors that disagree — not on md0/md1, where swap on RAID 1 has them as a matter of course |
+| `/sys/block/mdN/md/dev-*/errors` | a `raid_errors` warning naming the drive when md has had to correct read errors from it — often the first sign of a failing disk, and one the array never reports as degraded |
+
+**Read errors belong to a drive, not an array.** On SHR a drive is in every
+layer it has room for, so its counts are added up across md2, md3, … into one
+warning and one incident: *Drive 7 has had 40 read errors corrected (32 in md2,
+8 in md3)*.
+
+- **Any newly corrected error is a warning.** A healthy disk has none. md already
+  tolerates them: it rewrites the sector from parity, and fails the disk only
+  past `max_corr_read_errors` (20, halved every hour). A second, looser limit
+  would only hide what md is quietly absorbing.
+- **Errors that keep coming are critical.** `DOCTOR_RAID_ERRORS_PER_DAY`
+  (default 10, `0` never escalates) new errors within 24 hours opens a critical
+  incident in place of the warning. Errors a disk already had when the doctor
+  first saw it are not counted as new.
+- **Errors that stopped are history.** md's count only goes back to 0 when
+  the arrays are assembled - a reboot - so it cannot be what clears a
+  warning. The doctor keeps an hourly reading per drive and warns only while
+  the count has grown in the last `DOCTOR_RAID_ERRORS_DAYS` (default 7):
+  *Drive 7 has had 8 read errors corrected in the last 7 days, 48 since its
+  arrays were last assembled*. A drive first seen with errors warns for one
+  such window, since the doctor cannot tell how old they are.
+- **A reboot does not forget them.** Errors before a reboot still count
+  towards the window, so the warning does not go quiet just because md
+  started again from 0.
+- **An unchanged count is not a new sighting.** The incident stays open while
+  the warning holds, but *seen N×* only counts polls where the number rose. It
+  resolves on its own once the drive has gone `DOCTOR_RAID_ERRORS_DAYS`
+  without a new error, or once a scrub that found mismatches is followed by a
+  clean one. Readings are kept for `DOCTOR_RETENTION_DAYS`, so a window longer
+  than that never sees a quiet stretch.
+
+Like `raid_degraded`, these are never acted on. `DOCTOR_SYSFS_PATH` (default
+`/sys`) points elsewhere or, set to `off`, skips all of it; the panel then shows what
+mdstat says. SMART data is out of reach: it needs raw access to the disks.

@@ -1,13 +1,13 @@
 # Container Doctor runtime dependencies (pinned; Dependabot keeps them fresh)
-anthropic==1.13.0
+anthropic==1.14.0
 docker==7.2.0
-fastapi==0.143.0
+fastapi==0.143.1
 uvicorn[standard]==0.54.0
-pydantic==2.14.0
+pydantic==2.14.1
 httpx==0.28.1
 # OIDC sign-in: Authlib does discovery, JWKS and token validation; itsdangerous
 # signs the session cookie Starlette's SessionMiddleware sets.
-Authlib==1.8.0
+Authlib==1.9.1
 itsdangerous==2.2.0
 # Imported directly, though other packages bring them too: declared so an
 # upgrade of those cannot remove them silently. cryptography encrypts the

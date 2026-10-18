@@ -1,0 +1,51 @@
+---
+title: "What changed"
+description: "Recreations, renames, restarts and configuration changes, container by container."
+---
+
+Every poll is compared against the last one, and what changed is written down:
+
+- **Recreated**, by a redeploy. A recreate names the image it came up on: a new
+  version (`sonarr:4.0.20` → `4.0.21`), or a **new build** of the same tag, which
+  means the tag moved and a redeploy pulled it. A new *name* for the same build
+  — `server:2026.8.3` pinned to `server:2026.8.3@sha256:…` — is recorded as the
+  same image, since Docker runs exactly what it ran before. Several services of
+  one stack recreated together are marked as a redeploy of that stack.
+- **Renamed**, when a compose edit gives a service a new container name. Docker
+  removes one container and creates another; a container that appears in a stack
+  while one of the same stack is missing, with the same service name or the same
+  image, is recorded as that service renamed rather than as a new container. Only
+  an unambiguous match counts.
+- **What it runs with.** A recreate or rename is also compared against the
+  configuration the container ran with before, read from its own `docker
+  inspect`: environment, memory and CPU limits, capabilities, mounts, ports,
+  networks, restart policy, healthcheck, command and labels. The summary names
+  the first few differences ("config: memory limit 1g → 512m, env TZ UTC →
+  Europe/Zurich") or says the configuration is unchanged. This works whatever
+  deployed the container - no repository, Portainer token or extra socket
+  permission is needed. Env values follow the same allowlist the rest of the
+  doctor uses: harmless ones (TZ, PUID, `*_URL`, …) are shown after redaction;
+  every other value, and any label whose name looks secret, is stored only as a
+  keyed hash, so a change is reported as "changed (value not shown)". The key is
+  made once per install in `env-hash.key` next to the database. Containers last
+  seen before this existed have nothing to compare against, and say nothing
+  rather than "unchanged".
+- **Restarted**, **started** or **stopped**. A restart says whether the restart
+  policy did it or the doctor did. Restarts in a crash loop count up one row
+  instead of adding one every few seconds.
+
+The times are Docker's own, from each container's `Created` and `StartedAt`, not
+the poll's, so they line up with the logs. The last state seen is kept in SQLite:
+a change made while the doctor was down is still caught when it comes back, and
+restarting the doctor itself doesn't look like thirty recreates.
+
+It shows as **Changes** under Activity and as *What changed* on each container's
+view. It's also given to the diagnosis: the model sees the container's changes
+from the last week, each timed against the detection ("10 min before
+detection"). A recreate on a new build shortly before the errors started is
+usually most of the answer, and the prompt says so; when nothing in the timeline
+moved the image, it says that instead, so the model doesn't go looking for an
+earlier image to roll back to. Configuration differences are listed under the
+change they came with; when image and configuration were both compared and
+neither moved, the prompt says what that leaves: the workload, its data, or
+something outside the container. The briefing mentions the last day's recreates.

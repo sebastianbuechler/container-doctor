@@ -8,9 +8,17 @@
 
 - [ ] `python -m unittest discover -s tests` passes
 
+## Docs
+
+- [ ] I checked the documentation pages this change touches and updated what is no longer true
+- [ ] Settings or `.env.example` changed: I ran `python scripts/gen_docs.py`
+- [ ] Pages changed: `cd docs && npm run build` passes
+- [ ] `CHANGELOG.md` (*Unreleased*) updated for anything a user would notice
+
+Pages checked or changed:
+
 ## Checklist
 
 - [ ] New or changed settings are in `app/config.py`, `compose.example.yaml`
-      (`- DOCTOR_X=${DOCTOR_X:-}`), `.env.example` and `docs/guide.md`
-- [ ] Docs and `CHANGELOG.md` (*Unreleased*) updated for anything a user would notice
+      (`- DOCTOR_X=${DOCTOR_X:-}`) and `.env.example`
 - [ ] No secrets, real hostnames or personal data in code, tests, fixtures or screenshots
