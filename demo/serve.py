@@ -154,8 +154,8 @@ def main() -> None:
     for _ in range(2):
         app.router.routes.insert(0, app.router.routes.pop())
 
-    print(f"demo: http://127.0.0.1:{args.port}, user doctor, password {PASSWORD}  (data in {work})",
-          flush=True)
+    # The password is PASSWORD above; it is not printed, so it does not end up in logs.
+    print(f"demo: http://127.0.0.1:{args.port}, user doctor  (data in {work})", flush=True)
     uvicorn.run(app, host="127.0.0.1", port=args.port, log_level="warning", access_log=False)
 
 
