@@ -3,9 +3,13 @@ title: "Image updates and redeploys"
 description: "Which images are behind, newer versions with their release notes, and redeploying a new build."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 The doctor compares what each container runs against what its registry
 publishes, lists newer versions with their release notes, and - with a GitHub
 token - can redeploy a stack whose tag has a new build.
+
+<Screenshot name="updates" alt="The Updates page: new builds of a tag, newer versions in each tag's line, and a release still in its cooldown." />
 
 ## Which images are behind
 

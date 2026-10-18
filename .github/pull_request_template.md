@@ -14,6 +14,7 @@
 - [ ] Settings or `.env.example` changed: I ran `python scripts/gen_docs.py`
 - [ ] Pages changed: `cd docs && npm run build` passes
 - [ ] `CHANGELOG.md` (*Unreleased*) updated for anything a user would notice
+- [ ] Dashboard or API answers changed: I ran `python -m demo.record` and looked at the screenshots
 
 Pages checked or changed:
 

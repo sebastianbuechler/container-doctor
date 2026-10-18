@@ -40,6 +40,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The `doctor-smart` sidecar in `compose.example.yaml` is opt-in, behind the
   Compose profile `smart`, since it has raw disk access and `CAP_SYS_ADMIN`.
 
+### Added
+
+- Screenshots of every dashboard view in the documentation, in light and dark,
+  and a [live demo](https://sebastianbuechler.github.io/container-doctor/getting-started/live-demo/):
+  the real dashboard replaying a recording of a made-up host. Both are made
+  with `python -m demo.record`, which runs the doctor against stand-ins for
+  Docker, the host and the model (`demo/`).
+
 ### Changed
 
 - **The image runs as UID:GID `1000:1000`** (was `1026:100`). Compose's

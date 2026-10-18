@@ -3,10 +3,14 @@ title: "Incidents and noise"
 description: "How redeploys, log levels and recurring warnings are told apart from real failures."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 An incident is only worth your attention if something is really wrong. These
 are the ways the doctor tells a real failure from the everyday noise of a busy
 host: a redeploy is not an outage, a log's level counts for more than a word in
 it, and a run of false alarms can be cleared in one go.
+
+<Screenshot name="incidents" alt="The incident list: open incidents with their diagnosis, the one awaiting approval first." />
 
 ## Redeploys are not outages
 

@@ -21,13 +21,16 @@ export default defineConfig({
       lastUpdated: true,
       customCss: ['./src/styles/custom.css'],
       // Fails the build on a link to a page or heading that does not exist.
-      plugins: [starlightLinksValidator()],
+      // The demo is a static copy of the dashboard (scripts/build-demo.mjs),
+      // not a page of the site, so the validator does not know it.
+      plugins: [starlightLinksValidator({ exclude: ['/container-doctor/demo/'] })],
       sidebar: [
         {
           label: 'Getting started',
           items: [
             'getting-started/introduction',
             'getting-started/quick-start',
+            'getting-started/live-demo',
             'getting-started/installation',
             'getting-started/first-week',
           ],

@@ -1,0 +1,61 @@
+---
+title: "Live demo"
+description: "Click through the real Container Doctor dashboard, replaying a recording of a made-up host."
+template: splash
+---
+
+import { LinkButton, Aside } from '@astrojs/starlight/components';
+
+This is the real dashboard - the same page the doctor serves - replaying a
+recording of a made-up home server called `atlas`: 22 containers in eight
+stacks, a two-disk mirror and an NVMe system drive, and two weeks of history.
+Open the incidents, the containers, the storage and the model's call log; it
+behaves as it would on your host.
+
+<LinkButton href="/container-doctor/demo/" icon="external" variant="primary">Open the demo full screen</LinkButton>
+
+<div class="demo-frame">
+  <iframe src="/container-doctor/demo/" title="Container Doctor dashboard demo" loading="lazy"></iframe>
+</div>
+
+<Aside title="What is going on in it">
+Paperless is down: its Postgres database keeps failing its health check after
+hitting its memory limit, and a restart of it is **waiting for approval**.
+Sonarr's indexer rejects its API key, `/srv/data` is full in about 17 days, and
+one disk has remapped sectors. Earlier in the week the doctor restarted a hung
+Jellyfin and a locked Uptime Kuma, and checked that both came back.
+</Aside>
+
+## What is real and what is not
+
+Everything you see was produced by the doctor's own code: the rules opened the
+incidents, the policy proposed the restart, the briefing was written from the
+same facts, and the memory suggestions come from two weeks of samples. What
+stood in for the outside world: Docker, the host's `/proc` and `/sys`, the
+SMART exporter, the registries, the network checks - and the model, whose
+answers are canned. The recipe is in the repository, under `demo/`.
+
+Being a recording, it changes nothing: approving, dismissing, refreshing or
+saving a setting answers with a note that this is a demo, and times shift so
+the recording always looks recent.
+
+<style>{`
+  /* Wider than the text: under 860px the dashboard switches to its phone layout. */
+  .demo-frame {
+    --wide: min(1240px, calc(100vw - 2rem));
+    width: var(--wide);
+    margin-inline: calc((100% - var(--wide)) / 2);
+    margin-top: 1.5rem;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.75rem;
+    overflow: hidden;
+    box-shadow: var(--sl-shadow-md);
+    height: min(860px, 85vh);
+  }
+  .demo-frame iframe {
+    width: 100%;
+    height: 100%;
+    border: 0;
+    display: block;
+  }
+`}</style>

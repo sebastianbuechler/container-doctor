@@ -3,6 +3,8 @@ title: "The host"
 description: "CPU, memory, swap, load, I/O wait, temperatures and reboots of the machine itself."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 **Host** shows the host as a whole: CPU, I/O wait, load, memory, swap, each
 disk's activity, the kernel's pressure figures and temperature sensors, with
 charts over 24 hours or 7 days - the hottest sensor among them. It needs no extra access. `/proc/stat`,
@@ -28,3 +30,5 @@ Docker already mounts read-only.
   [Drive health](/container-doctor/guides/storage/#drive-health).
 
 `DOCTOR_PROC_PATH=off` turns the page and its rules off.
+
+<Screenshot name="host" alt="The Host page: CPU, memory, load, disks and temperatures, with a day of history." />

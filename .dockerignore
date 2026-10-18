@@ -6,6 +6,7 @@
 .env.*
 !.env.example
 data/
+demo/
 docs/
 tests/
 **/__pycache__/

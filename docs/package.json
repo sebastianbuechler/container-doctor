@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/build-demo.mjs",
     "dev": "astro dev",
+    "prebuild": "node scripts/build-demo.mjs",
     "build": "astro build",
     "preview": "astro preview",
     "check": "astro check"

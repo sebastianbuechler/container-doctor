@@ -2,7 +2,8 @@
 
 AI triage for the Docker containers on one host. Python (FastAPI, docker-py,
 SQLite) in `app/`, a no-build dashboard in `app/web/static/`, tests in `tests/`,
-the documentation site (Astro Starlight) in `docs/`.
+the documentation site (Astro Starlight) in `docs/`, and in `demo/` a made-up
+host the real doctor runs against for the docs' screenshots and live demo.
 
 ## Commands
 
@@ -10,6 +11,7 @@ the documentation site (Astro Starlight) in `docs/`.
 pip install -r requirements.txt -r requirements-dev.txt   # dev adds what the tests need
 python -m unittest discover -s tests          # all tests, no Docker needed
 python scripts/gen_docs.py                    # regenerate the env var reference
+python -m demo.record                         # retake screenshots, re-record the demo
 cd docs && npm ci && npm run build            # build the docs; fails on broken links
 ```
 
@@ -26,6 +28,10 @@ every change - feature, fix, setting, label, behaviour, UI text:
    Never edit `docs/src/content/docs/reference/environment-variables.md` by hand.
 3. A `doctor.*` label changed or added: update `docs/src/content/docs/reference/labels.md`.
 4. Pages changed: build the docs (`cd docs && npm run build`).
+5. The dashboard looks different, or an API answer changed shape: run
+   `python -m demo.record` to retake the screenshots and re-record the live
+   demo, and look at the screenshots it wrote. A new view or panel gets a
+   `<Screenshot>` on the page that describes it.
 
 `tests/test_docs.py` fails when the generated reference is stale, a label is
 undocumented, or a page is missing from the sidebar - but it cannot tell whether
