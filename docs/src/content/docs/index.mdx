@@ -1,11 +1,12 @@
 ---
-title: "Container Doctor"
-description: "AI triage for the Docker containers on one host. Rules detect, a model explains, you decide what happens."
+title: "Know why a container broke, before you open a terminal."
+description: "AI triage for self-hosted Docker. Rules catch the problem, a model explains it, and you decide what happens."
 template: splash
+editUrl: false
+lastUpdated: false
+heroLayout: centered
 hero:
-  tagline: AI triage for the Docker containers on one host. Rules detect what is wrong, a model explains why, and nothing happens until you say so.
-  image:
-    file: ../../assets/logo.svg
+  tagline: AI triage for self-hosted Docker. Rules catch the problem, a model explains it, and you decide what happens.
   actions:
     - text: Quick start
       link: /container-doctor/getting-started/quick-start/
@@ -14,52 +15,43 @@ hero:
       link: /container-doctor/getting-started/live-demo/
       icon: laptop
       variant: secondary
-    - text: How it works
-      link: /container-doctor/concepts/how-it-works/
-      variant: minimal
-    - text: GitHub
-      link: https://github.com/sebastianbuechler/container-doctor
-      icon: external
-      variant: minimal
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
-import Screenshot from '../../components/Screenshot.astro';
+import Tour from '../../components/Tour.astro';
 
-<Screenshot name="overview" alt="The Container Doctor overview: a briefing that says paperless is down until a database restart is approved, three priorities, and a card each for incidents, containers, storage and updates." />
+<Tour />
 
-<CardGrid stagger>
-  <Card title="Rules decide, a model explains" icon="seti:config">
-    Deterministic rules open an incident; the model only ever explains one that
-    already exists, and picks at most one action from a closed list of five.
-  </Card>
-  <Card title="Nothing without you" icon="approve-check">
-    Starts in `observe`. `suggest` asks before it acts; `auto` acts only where
-    you allowed it, inside rate limits, and checks that it helped.
-  </Card>
-  <Card title="Restart, never create" icon="warning">
-    Docker is reached through a socket proxy that permits restarting a
-    container and nothing that could escape one. No mount of your data.
-  </Card>
-  <Card title="Secrets stay out" icon="seti:lock">
-    Logs are scrubbed of tokens and keys, best effort, before anything is
-    stored or sent to a model, and every request it sent can be read back on the dashboard.
-  </Card>
-  <Card title="Any model" icon="rocket">
-    Anthropic or anything OpenAI-compatible - OpenRouter, Gemini, Groq, or a
-    local model. A daily budget stops new calls.
-  </Card>
-  <Card title="The whole host" icon="laptop">
-    Disks and their fill rate, SMART and RAID, CPU and memory, the network and
-    DNS, image updates with release notes, and what changed on each container.
-  </Card>
-</CardGrid>
+<div class="steps">
+  <div>
+    <strong><span>1</span>Rules detect</strong>
+    <p>A crash loop, an error burst, a disk filling up, a drive wearing out - caught by plain rules, not guessed.</p>
+  </div>
+  <div>
+    <strong><span>2</span>A model explains</strong>
+    <p>It reads the logs, the changes and the stack, and says what broke and what to do about it.</p>
+  </div>
+  <div>
+    <strong><span>3</span>You decide</strong>
+    <p>Nothing changes without your OK. It can restart a container, never create one, and checks that the restart helped.</p>
+  </div>
+</div>
 
-## Where to go next
-
-<CardGrid>
-  <LinkCard title="Introduction" description="What it is, and why it is built the way it is." href="/container-doctor/getting-started/introduction/" />
-  <LinkCard title="Quick start" description="Running in five minutes with the reference compose file." href="/container-doctor/getting-started/quick-start/" />
-  <LinkCard title="Environment variables" description="Every setting, generated from the code." href="/container-doctor/reference/environment-variables/" />
-  <LinkCard title="Security" description="What it can reach, and what it refuses to do." href="/container-doctor/guides/security/" />
-</CardGrid>
+<style>{`
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 2.5rem;
+    max-width: 64rem;
+    margin: 4rem auto 2rem;
+  }
+  .steps > div { margin: 0; }
+  .steps strong { display: flex; align-items: center; gap: 0.6rem; color: var(--sl-color-white); font-size: var(--sl-text-lg); }
+  .steps span {
+    display: inline-grid; place-items: center; flex: none;
+    width: 1.7rem; height: 1.7rem; border-radius: 50%;
+    background: var(--sl-color-accent); color: var(--sl-color-black);
+    font-size: var(--sl-text-sm); font-weight: 700;
+  }
+  .steps p { margin-top: 0.5rem; color: var(--sl-color-gray-2); }
+  @media (max-width: 50rem) { .steps { margin-top: 2.5rem; gap: 1.75rem; } }
+`}</style>

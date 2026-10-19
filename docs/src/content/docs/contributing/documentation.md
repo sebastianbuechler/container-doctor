@@ -54,6 +54,8 @@ Playwright. It writes:
 - `docs/src/assets/screenshots/<view>-light.webp` and `-dark.webp`, shown with
   `<Screenshot name="<view>" alt="..." />` in an `.mdx` page; the reader sees
   the one matching their theme.
+  The start page shows four of them, and the phone one, in a tour
+  (`docs/src/components/Tour.astro`).
 - `docs/demo/api.json`, every API answer the tour read.
 
 The demo is the dashboard's own `app/web/static`, copied into the site at build

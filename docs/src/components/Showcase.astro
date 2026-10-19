@@ -1,0 +1,112 @@
+---
+// A dashboard screenshot in a browser window, optionally with the phone
+// version over its corner. Each image follows the reader's theme. On a
+// narrow screen only one picture shows: the phone's, when there is one.
+import { Image } from 'astro:assets';
+import type { ImageMetadata } from 'astro';
+
+interface Props {
+	/** The desktop screenshot's name in src/assets/screenshots, without -light/-dark. */
+	desktop: string;
+	/** The phone screenshot's name, if this view has one. */
+	phone?: string;
+	alt: string;
+}
+
+const { desktop, phone, alt } = Astro.props;
+const shots = import.meta.glob<{ default: ImageMetadata }>('../assets/screenshots/*.webp', { eager: true });
+const find = (name: string, theme: string) => {
+	const shot = shots[`../assets/screenshots/${name}-${theme}.webp`];
+	if (!shot) throw new Error(`no screenshot ${name}-${theme}.webp - run python -m demo.record`);
+	return shot.default;
+};
+---
+
+<div class:list={['showcase', { 'with-phone': phone }]}>
+	<figure class="window">
+		<div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
+		<Image src={find(desktop, 'light')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="dark:sl-hidden" />
+		<Image src={find(desktop, 'dark')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="light:sl-hidden" />
+	</figure>
+	{
+		phone && (
+			<figure class="phone">
+				<Image src={find(phone, 'light')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="dark:sl-hidden" />
+				<Image src={find(phone, 'dark')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="light:sl-hidden" />
+			</figure>
+		)
+	}
+</div>
+
+<style>
+	.showcase {
+		position: relative;
+		max-width: 72rem;
+		margin-inline: auto;
+	}
+	figure {
+		margin: 0;
+	}
+	figure :global(img) {
+		vertical-align: middle;
+		width: 100%;
+		height: auto;
+	}
+	/* The same width with or without the phone, so switching views does not jump. */
+	.window {
+		width: 88%;
+		margin-inline: auto;
+		border: 1px solid var(--sl-color-gray-5);
+		border-radius: 0.9rem;
+		overflow: hidden;
+		background: var(--sl-color-gray-6);
+		box-shadow: 0 30px 60px -20px rgb(0 0 0 / 0.35);
+	}
+	.bar {
+		display: flex;
+		gap: 0.4rem;
+		padding: 0.6rem 0.8rem;
+		border-bottom: 1px solid var(--sl-color-gray-5);
+	}
+	.bar span {
+		width: 0.65rem;
+		height: 0.65rem;
+		border-radius: 50%;
+		background: var(--sl-color-gray-4);
+	}
+	.phone {
+		width: 15rem;
+		border: 0.55rem solid #111;
+		border-radius: 2.2rem;
+		overflow: hidden;
+		background: #111;
+		box-shadow: 0 30px 50px -15px rgb(0 0 0 / 0.5);
+	}
+	/* The phone over the window's bottom-right corner. */
+	.with-phone {
+		padding-bottom: 4rem;
+	}
+	.with-phone .phone {
+		position: absolute;
+		right: 0;
+		bottom: 0;
+	}
+
+	@media (max-width: 50rem) {
+		.window {
+			width: 100%;
+		}
+		/* One picture, not two stacked: the phone's, where there is one. */
+		.with-phone {
+			padding-bottom: 0;
+		}
+		.with-phone .window {
+			display: none;
+		}
+		.with-phone .phone {
+			position: static;
+			width: min(16rem, 75%);
+			margin-inline: auto;
+		}
+	}
+</style>

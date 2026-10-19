@@ -1,6 +1,6 @@
 # Container Doctor
 
-AI triage for the Docker containers on one host. Python (FastAPI, docker-py,
+AI triage for self-hosted Docker containers. Python (FastAPI, docker-py,
 SQLite) in `app/`, a no-build dashboard in `app/web/static/`, tests in `tests/`,
 the documentation site (Astro Starlight) in `docs/`, and in `demo/` a made-up
 host the real doctor runs against for the docs' screenshots and live demo.

@@ -6,6 +6,11 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- The documentation's start page leads with the dashboard: a short pitch, a
+  tour of four views (with the phone version), and how it works in three steps.
+
 ### Added
 
 - The live demo runs the classifier in `on`, with two weeks of its verdicts:
