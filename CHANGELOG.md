@@ -6,6 +6,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- The live demo's containers, image updates, internet checks and host tiles no
+  longer stay on their loading placeholders, and its poll indicator no longer
+  reads "Poll overdue".
+
 ## [0.2.0] - 2026-10-18
 
 ### Upgrading from 0.1.0
