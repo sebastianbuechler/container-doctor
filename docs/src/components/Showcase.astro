@@ -1,7 +1,8 @@
 ---
 // A dashboard screenshot in a browser window, optionally with the phone
 // version over its corner. Each image follows the reader's theme. On a
-// narrow screen only one picture shows: the phone's, when there is one.
+// narrow screen the two sit side by side in a row you swipe, phone first,
+// rather than one above the other.
 import { Image } from 'astro:assets';
 import type { ImageMetadata } from 'astro';
 
@@ -23,26 +24,63 @@ const find = (name: string, theme: string) => {
 ---
 
 <div class:list={['showcase', { 'with-phone': phone }]}>
-	<figure class="window">
-		<div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
-		<Image src={find(desktop, 'light')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="dark:sl-hidden" />
-		<Image src={find(desktop, 'dark')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="light:sl-hidden" />
-	</figure>
+	<div class="frames">
+		<figure class="window">
+			<div class="bar" aria-hidden="true"><span></span><span></span><span></span></div>
+			<Image src={find(desktop, 'light')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="dark:sl-hidden" />
+			<Image src={find(desktop, 'dark')} {alt} widths={[960, 1920, 2560]} sizes="(min-width: 75rem) 64rem, 100vw" class="light:sl-hidden" />
+		</figure>
+		{
+			phone && (
+				<figure class="phone">
+					<Image src={find(phone, 'light')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="dark:sl-hidden" />
+					<Image src={find(phone, 'dark')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="light:sl-hidden" />
+				</figure>
+			)
+		}
+	</div>
 	{
 		phone && (
-			<figure class="phone">
-				<Image src={find(phone, 'light')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="dark:sl-hidden" />
-				<Image src={find(phone, 'dark')} alt={`${alt}, on a phone`} widths={[260, 520, 780]} sizes="15rem" class="light:sl-hidden" />
-			</figure>
+			<div class="switch" aria-hidden="true">
+				<button type="button" class="on" tabindex="-1">Phone</button>
+				<button type="button" tabindex="-1">Desktop</button>
+			</div>
 		)
 	}
 </div>
 
+<script>
+	// In the swipeable row: mark which picture is in view, let the labels
+	// switch to it, and fit the row's height to it - the phone is much taller.
+	for (const showcase of document.querySelectorAll('.showcase.with-phone')) {
+		const frames = showcase.querySelector<HTMLElement>('.frames')!;
+		const slides = [showcase.querySelector<HTMLElement>('.phone')!, showcase.querySelector<HTMLElement>('.window')!];
+		const buttons = showcase.querySelectorAll('.switch button');
+		const swiping = () => getComputedStyle(frames).overflowX === 'auto';
+		const show = (i: number) => {
+			buttons.forEach((b, j) => b.classList.toggle('on', i === j));
+			const pad = parseFloat(getComputedStyle(frames).paddingTop) + parseFloat(getComputedStyle(frames).paddingBottom);
+			frames.style.height = swiping() ? `${slides[i].offsetHeight + pad}px` : '';
+		};
+		let current = 0;
+		frames.addEventListener('scroll', () => {
+			const i = frames.scrollLeft > (frames.scrollWidth - frames.clientWidth) / 2 ? 1 : 0;
+			if (i !== current) show((current = i));
+		}, { passive: true });
+		buttons.forEach((b, i) => b.addEventListener('click', () => {
+			frames.scrollTo({ left: i ? frames.scrollWidth : 0, behavior: 'smooth' });
+		}));
+		new ResizeObserver(() => show(current)).observe(slides[0]);
+	}
+</script>
+
 <style>
 	.showcase {
-		position: relative;
 		max-width: 72rem;
 		margin-inline: auto;
+	}
+	.frames {
+		position: relative;
 	}
 	figure {
 		margin: 0;
@@ -83,7 +121,7 @@ const find = (name: string, theme: string) => {
 		box-shadow: 0 30px 50px -15px rgb(0 0 0 / 0.5);
 	}
 	/* The phone over the window's bottom-right corner. */
-	.with-phone {
+	.with-phone .frames {
 		padding-bottom: 4rem;
 	}
 	.with-phone .phone {
@@ -91,22 +129,74 @@ const find = (name: string, theme: string) => {
 		right: 0;
 		bottom: 0;
 	}
+	.switch {
+		display: none;
+	}
 
 	@media (max-width: 50rem) {
 		.window {
 			width: 100%;
+			border-radius: 0.6rem;
 		}
-		/* One picture, not two stacked: the phone's, where there is one. */
-		.with-phone {
-			padding-bottom: 0;
+		.bar {
+			padding: 0.4rem 0.6rem;
 		}
-		.with-phone .window {
+		.bar span {
+			width: 0.45rem;
+			height: 0.45rem;
+		}
+		/* Side by side in a row you swipe: the phone, then the desktop peeking in. */
+		.with-phone .frames {
+			display: flex;
+			align-items: flex-start;
+			gap: 1rem;
+			padding: 0.5rem 0 1.5rem;
+			overflow-x: auto;
+			overflow-y: hidden;
+			transition: height 0.25s ease;
+			scroll-snap-type: x mandatory;
+			scrollbar-width: none;
+		}
+		.with-phone .frames::-webkit-scrollbar {
 			display: none;
 		}
+		.with-phone .phone,
+		.with-phone .window {
+			flex: none;
+			scroll-snap-align: center;
+			box-shadow: 0 16px 30px -14px rgb(0 0 0 / 0.45);
+		}
 		.with-phone .phone {
+			order: -1;
 			position: static;
-			width: min(16rem, 75%);
-			margin-inline: auto;
+			width: min(13rem, 62%);
+			margin-left: calc((100% - min(13rem, 62%)) / 2);
+			border-width: 0.4rem;
+			border-radius: 1.6rem;
+		}
+		.with-phone .window {
+			width: 92%;
+			margin-right: 4%;
+		}
+		.switch {
+			display: flex;
+			justify-content: center;
+			gap: 0.4rem;
+		}
+		.switch button {
+			margin: 0;
+			padding: 0.1rem 0.6rem;
+			border: 0;
+			border-radius: 999px;
+			background: none;
+			font: inherit;
+			font-size: var(--sl-text-xs);
+			color: var(--sl-color-gray-3);
+			cursor: pointer;
+		}
+		.switch button.on {
+			background: var(--sl-color-gray-6);
+			color: var(--sl-color-white);
 		}
 	}
 </style>

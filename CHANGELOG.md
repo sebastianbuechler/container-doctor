@@ -9,7 +9,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Changed
 
 - The documentation's start page leads with the dashboard: a short pitch, a
-  tour of four views (with the phone version), and how it works in three steps.
+  tour of four views (with the phone version, side by side on a phone), and
+  how it works in three steps.
 
 ### Added
 

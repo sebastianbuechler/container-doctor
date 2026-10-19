@@ -1,6 +1,6 @@
 ---
-// A few views of the dashboard behind tabs - radio buttons, no script. On a
-// phone only the first view shows, as the phone screenshot.
+// A few views of the dashboard behind tabs - radio buttons, no script. Tabs
+// underlined, not pills, so they do not read as more of the hero's buttons.
 import Showcase from './Showcase.astro';
 
 const views = [
@@ -32,7 +32,7 @@ const views = [
 
 <style>
 	.tour {
-		margin-top: 1rem;
+		margin-top: 1.5rem;
 	}
 	.tour input {
 		position: absolute;
@@ -42,16 +42,22 @@ const views = [
 	.tabs {
 		display: flex;
 		justify-content: center;
-		gap: 0.4rem;
+		gap: 1.75rem;
+		border-bottom: 1px solid var(--sl-color-hairline);
+		max-width: 40rem;
+		margin-inline: auto;
 	}
 	.tabs label {
 		margin: 0; /* not Starlight's spacing between siblings */
 		cursor: pointer;
-		padding: 0.35rem 1rem;
-		border-radius: 999px;
-		border: 1px solid var(--sl-color-gray-5);
+		padding: 0.5rem 0.1rem;
+		margin-bottom: -1px;
+		border-bottom: 2px solid transparent;
 		font-size: var(--sl-text-sm);
-		color: var(--sl-color-gray-2);
+		color: var(--sl-color-gray-3);
+	}
+	.tabs label:hover {
+		color: var(--sl-color-white);
 	}
 	.panel {
 		display: none;
@@ -71,9 +77,9 @@ const views = [
 	#tour-incident:checked ~ .tabs label[for='tour-incident'],
 	#tour-storage:checked ~ .tabs label[for='tour-storage'],
 	#tour-updates:checked ~ .tabs label[for='tour-updates'] {
-		background: var(--sl-color-accent);
-		border-color: var(--sl-color-accent);
-		color: var(--sl-color-black);
+		border-bottom-color: var(--sl-color-accent);
+		color: var(--sl-color-white);
+		font-weight: 600;
 	}
 	#tour-overview:focus-visible ~ .tabs label[for='tour-overview'],
 	#tour-incident:focus-visible ~ .tabs label[for='tour-incident'],
@@ -84,18 +90,12 @@ const views = [
 	}
 
 	@media (max-width: 50rem) {
-		/* The phone screenshot of the overview, and nothing to switch. */
 		.tabs {
-			display: none;
-		}
-		.panel {
-			display: none !important;
-		}
-		.panel-overview {
-			display: block !important;
+			gap: 1.1rem;
 		}
 		.panel p {
-			display: none;
+			margin: 0.75rem 0 1rem;
+			font-size: var(--sl-text-sm);
 		}
 	}
 </style>
