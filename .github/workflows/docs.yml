@@ -50,6 +50,10 @@ jobs:
       - run: npm run build
         env:
           ASTRO_TELEMETRY_DISABLED: '1'
+          # Cloudflare Web Analytics, for the published site only: a repository
+          # variable (not a secret - the token is public in every page).
+          # Unset, the site carries no analytics.
+          CF_BEACON_TOKEN: ${{ github.ref == 'refs/heads/main' && vars.CF_BEACON_TOKEN || '' }}
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         if: github.ref == 'refs/heads/main'
         with:

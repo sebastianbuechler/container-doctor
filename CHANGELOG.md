@@ -6,6 +6,12 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- The documentation site counts visits with Cloudflare Web Analytics: no
+  cookies, no fingerprinting. Only the published site does; see
+  *Contributing → Documentation*.
+
 ### Fixed
 
 - The live demo's containers, image updates, internet checks and host tiles no

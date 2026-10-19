@@ -32,6 +32,11 @@ html = html
   .replace('<script src="static/app.js"></script>',
     '<script src="static/demo-shim.js"></script>\n<script src="static/app.js"></script>')
   .replace("<head>", '<head>\n<meta name="robots" content="noindex">');
+// The same visitor counting as the rest of the site; see astro.config.mjs.
+const beacon = process.env.CF_BEACON_TOKEN?.trim();
+if (beacon) {
+  html = html.replace("</head>", `<script defer src="https://static.cloudflareinsights.com/beacon.min.js" data-cf-beacon='${JSON.stringify({ token: beacon })}'></script>\n</head>`);
+}
 if (!html.includes("demo-shim.js")) throw new Error("index.html no longer loads static/app.js the way this expects");
 fs.writeFileSync(path.join(out, "index.html"), html);
 console.log("demo: wrote public/demo/");
