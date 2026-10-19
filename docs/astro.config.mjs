@@ -5,6 +5,21 @@ import starlightLinksValidator from 'starlight-links-validator';
 
 const repo = 'https://github.com/sebastianbuechler/container-doctor';
 
+// Cloudflare Web Analytics: visitor counts without cookies. The Docs workflow
+// sets the token only when it builds main for GitHub Pages, so local builds,
+// pull requests and forks report nowhere. See contributing/documentation.
+const beacon = process.env.CF_BEACON_TOKEN?.trim();
+const analytics = beacon
+  ? {
+      tag: /** @type {const} */ ('script'),
+      attrs: {
+        defer: true,
+        src: 'https://static.cloudflareinsights.com/beacon.min.js',
+        'data-cf-beacon': JSON.stringify({ token: beacon }),
+      },
+    }
+  : null;
+
 export default defineConfig({
   // GitHub Pages serves the site from /container-doctor/.
   site: 'https://sebastianbuechler.github.io',
@@ -20,6 +35,7 @@ export default defineConfig({
       editLink: { baseUrl: `${repo}/edit/main/docs/` },
       lastUpdated: true,
       customCss: ['./src/styles/custom.css'],
+      head: analytics ? [analytics] : [],
       // Fails the build on a link to a page or heading that does not exist.
       // The demo is a static copy of the dashboard (scripts/build-demo.mjs),
       // not a page of the site, so the validator does not know it.

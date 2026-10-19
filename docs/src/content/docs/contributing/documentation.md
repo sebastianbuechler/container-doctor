@@ -90,3 +90,18 @@ cd docs
 npm ci
 npm run dev   # http://localhost:4321/container-doctor/
 ```
+
+## Visitor numbers
+
+The published site counts visits with
+[Cloudflare Web Analytics](https://www.cloudflare.com/web-analytics/), which
+sets no cookies and does not fingerprint visitors, so the site needs no cookie
+banner. Each page, the live demo included, loads Cloudflare's beacon when the
+build has a token.
+
+The token is the repository variable `CF_BEACON_TOKEN` (**Settings → Secrets
+and variables → Actions → Variables**), which the Docs workflow passes to the
+build of `main` only. Local builds, pull requests and forks carry no analytics.
+Without the variable, the site carries none at all. The numbers are in the
+Cloudflare dashboard, under Web Analytics.
+
