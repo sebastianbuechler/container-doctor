@@ -164,6 +164,78 @@ def _answer(name: str, prompt: str) -> dict:
     return {}
 
 
+# The classifier's answers, in the Decisions API's shape (choice, confidence
+# and probabilities per question; `noul` is the chance a flag is true), keyed
+# like the diagnoses. One of each outcome: hidden, raised, lowered and kept.
+def _choice(choice: str, probabilities: dict[str, float]) -> dict:
+    return {"choice": choice, "confidence": probabilities[choice], "probabilities": probabilities}
+
+
+CLASSIFICATIONS = {
+    # The rules see a burst of ERROR lines; they are sites Uptime Kuma watches
+    # being down, which is its job, not a fault of Uptime Kuma. Hidden.
+    ("uptime-kuma", "log_errors"): {
+        "verdict": _choice("benign_noise", {"benign_noise": 0.94, "expected_transient": 0.03,
+                                            "real_fault": 0.02, "unclear": 0.01}),
+        "severity": _choice("info", {"info": 0.88, "warning": 0.11, "critical": 0.01}),
+        "cause": _choice("network", {"network": 0.71, "dependency": 0.22, "unknown": 0.07}),
+        "self_heals": {"noul": 0.83},
+    },
+    # A database stuck in recovery: worse than the rule's warning. Raised.
+    ("paperless-db", "unhealthy"): {
+        "verdict": _choice("real_fault", {"real_fault": 0.93, "expected_transient": 0.05,
+                                          "benign_noise": 0.01, "unclear": 0.01}),
+        "severity": _choice("critical", {"critical": 0.81, "warning": 0.18, "info": 0.01}),
+        "cause": _choice("resources", {"resources": 0.68, "storage": 0.14, "config": 0.1,
+                                       "unknown": 0.08}),
+        "self_heals": {"noul": 0.06},
+    },
+    # Real, but the restarts follow from the database: lowered to warning.
+    ("paperless", "restart_loop"): {
+        "verdict": _choice("real_fault", {"real_fault": 0.88, "expected_transient": 0.09,
+                                          "benign_noise": 0.02, "unclear": 0.01}),
+        "severity": _choice("warning", {"warning": 0.92, "critical": 0.07, "info": 0.01}),
+        "cause": _choice("dependency", {"dependency": 0.9, "config": 0.05, "unknown": 0.05}),
+        "self_heals": {"noul": 0.31},
+    },
+    # Real, and as serious as the rule said. Kept as it is.
+    ("sonarr", "log_errors"): {
+        "verdict": _choice("real_fault", {"real_fault": 0.86, "benign_noise": 0.08,
+                                          "expected_transient": 0.04, "unclear": 0.02}),
+        "severity": _choice("warning", {"warning": 0.79, "critical": 0.12, "info": 0.09}),
+        "cause": _choice("auth", {"auth": 0.87, "config": 0.08, "unknown": 0.05}),
+        "self_heals": {"noul": 0.04},
+    },
+}
+
+UNCLEAR = {
+    "verdict": _choice("unclear", {"unclear": 0.55, "real_fault": 0.3, "benign_noise": 0.15}),
+    "severity": _choice("warning", {"warning": 0.6, "info": 0.3, "critical": 0.1}),
+    "cause": _choice("unknown", {"unknown": 0.8, "config": 0.2}),
+    "self_heals": {"noul": 0.5},
+}
+
+
+def classification(state: str) -> dict:
+    container = re.search(r"^name: (.+)$", state, re.M)
+    kind = re.search(r"^kind: (.+)$", state, re.M)
+    key = (container.group(1).strip() if container else "", kind.group(1).strip() if kind else "")
+    return CLASSIFICATIONS.get(key, UNCLEAR)
+
+
+def patch_classifier(decision_module) -> None:
+    """The decision model's endpoint: everything before and after the HTTP
+    call - the questions, the guard rails, the call log - is the doctor's."""
+    async def post(self, body):
+        await asyncio.sleep(random.uniform(0.3, 0.9))
+        tokens_in = len(body["state"]) // 4 + 600
+        return {"model": self.name, "answers": classification(body["state"]),
+                "usage": {"input_tokens": tokens_in, "output_tokens": 24,
+                          "cost": tokens_in * self.price_in / 1_000_000}}
+
+    decision_module.OpenRouterDecisions._post = post
+
+
 def patch(diagnoser_module) -> None:
     async def structured_anthropic(self, *, system, prompt, schema, name, model, effort,
                                    max_tokens):

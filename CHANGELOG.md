@@ -8,6 +8,9 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The live demo runs the classifier in `on`, with two weeks of its verdicts:
+  noise it hid, severities it raised and lowered, and signals it left to the
+  rules. The classifier guide shows its panel.
 - The documentation site counts visits with Cloudflare Web Analytics: no
   cookies, no fingerprinting. Only the published site does; see
   *Contributing → Documentation*.

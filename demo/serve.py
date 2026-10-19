@@ -52,6 +52,10 @@ def environment(data: Path, port: int, fake_root: Path) -> dict[str, str]:
         "DOCTOR_RELEASE_NOTES": "true",
         "ANTHROPIC_API_KEY": "demo",
         "DOCTOR_MODEL": "claude-opus-5-5",
+        # The classifier, acting on its verdicts: its backend is faked at the
+        # HTTP call (model.patch_classifier).
+        "DOCTOR_CLASSIFIER": "on",
+        "DOCTOR_CLASSIFIER_API_KEY": "demo",
         "DOCTOR_LOG_LEVEL": "INFO",
         "DOCKER_HOST": "tcp://doctor-socket-proxy:2375",
     }
@@ -74,7 +78,8 @@ def main() -> None:
     from fastapi.responses import PlainTextResponse
     import uvicorn
 
-    from app import connectivity, diagnoser, preflight, supervisor as supervisor_module, versions
+    from app import connectivity, decision, diagnoser, preflight, versions
+    from app import supervisor as supervisor_module
     from app import main as app_main
     from app import docker_client
 
@@ -100,6 +105,7 @@ def main() -> None:
     fakes.patch_registries(supervisor_module, versions)
     fakes.patch_connectivity(connectivity)
     model.patch(diagnoser)
+    model.patch_classifier(decision)
 
     async def probe_endpoint(docker_host):
         return fakes.preflight_results(preflight)
