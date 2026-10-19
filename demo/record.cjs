@@ -30,6 +30,7 @@ const SHOTS = [
   ["activity", "#/activity"],
   ["llm", "#/llm"],
   ["settings", "#/settings"],
+  ["classifier", "#/llm", "#panel-classifier"],
 ];
 
 const recorded = {};
@@ -85,8 +86,16 @@ async function tour(browser, scheme) {
 
   const dir = path.join(OUT, "screenshots");
   fs.mkdirSync(dir, { recursive: true });
-  for (const [name, route] of SHOTS) {
+  for (const [name, route, panel] of SHOTS) {
     await go(page, typeof route === "function" ? route(ids) : route);
+    // A panel further down its page, brought to the top under the header.
+    if (panel) {
+      await page.evaluate((selector) => {
+        const top = document.querySelector(selector).getBoundingClientRect().top;
+        window.scrollBy(0, top - 96);
+      }, panel);
+      await page.waitForTimeout(400);
+    }
     if (name === "container" || name === "incident") await page.waitForTimeout(1200);
     // The incident is scrolled to the top, under the sticky header.
     if (name === "incident") await page.evaluate(() => window.scrollBy(0, -96));

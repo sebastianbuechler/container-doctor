@@ -60,6 +60,33 @@ class TheFakeHost(unittest.TestCase):
         self.assertEqual(sorted(d["device"] for d in drives), ["nvme0n1", "sda", "sdb"])
 
 
+class TheClassifier(unittest.TestCase):
+    """The demo's canned decision-model answers, through the real classifier."""
+
+    def verdict(self, name, kind, severity):
+        import dataclasses
+        from types import SimpleNamespace
+
+        from app.classifier import QUESTIONS, Classifier
+        from app.config import Settings
+        from app.decision import Decision, read_answers
+        from demo import model
+
+        settings = dataclasses.replace(Settings(), classifier_mode="on")
+        state = f"## Incident\nkind: {kind}\n\n## Container\nname: {name}\n"
+        decision = Decision(read_answers(model.classification(state), QUESTIONS),
+                            "demo", True)
+        signal = SimpleNamespace(kind=kind, severity=severity, container={"name": name},
+                                 details={}, fingerprint="x")
+        return Classifier(settings, None, None).judge(signal, decision)
+
+    def test_each_live_signal_gets_its_outcome(self):
+        self.assertEqual(self.verdict("uptime-kuma", "log_errors", "warning").action, "suppress")
+        self.assertEqual(self.verdict("paperless-db", "unhealthy", "warning").action, "escalate")
+        self.assertEqual(self.verdict("paperless", "restart_loop", "critical").action, "downgrade")
+        self.assertEqual(self.verdict("sonarr", "log_errors", "warning").action, "open")
+
+
 class TheSeed(unittest.TestCase):
     def test_two_weeks_of_history_go_in(self):
         path = os.path.join(tempfile.mkdtemp(), "doctor.db")
@@ -69,6 +96,8 @@ class TheSeed(unittest.TestCase):
             self.assertEqual(store.count_incidents(), len(seed.PAST))
             self.assertGreater(store.count_changes(), 10)
             self.assertGreater(store.count_llm_calls(), len(seed.PAST))
+            actions = {row["action"] for row in store.list_classifications(limit=50)}
+            self.assertEqual(actions, {"open", "suppress"})
         finally:
             store.close()
 

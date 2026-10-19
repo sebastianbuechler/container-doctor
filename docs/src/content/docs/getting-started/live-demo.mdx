@@ -22,8 +22,12 @@ behaves as it would on your host.
 Paperless is down: its Postgres database keeps failing its health check after
 hitting its memory limit, and a restart of it is **waiting for approval**.
 Sonarr's indexer rejects its API key, `/srv/data` is full in about 17 days, and
-one disk has remapped sectors. Earlier in the week the doctor restarted a hung
-Jellyfin and a locked Uptime Kuma, and checked that both came back.
+one disk has remapped sectors. The [classifier](/container-doctor/guides/classifier/)
+runs in `on`: it hid Uptime Kuma's errors about the sites it monitors as noise,
+raised the database's failing health check to critical, and lowered paperless's
+restart loop to a warning, since the database is the cause. Earlier in the week
+the doctor restarted a hung Jellyfin and a locked Uptime Kuma, and checked that
+both came back.
 </Aside>
 
 ## What is real and what is not
@@ -32,8 +36,8 @@ Everything you see was produced by the doctor's own code: the rules opened the
 incidents, the policy proposed the restart, the briefing was written from the
 same facts, and the memory suggestions come from two weeks of samples. What
 stood in for the outside world: Docker, the host's `/proc` and `/sys`, the
-SMART exporter, the registries, the network checks - and the model, whose
-answers are canned. The recipe is in the repository, under `demo/`.
+SMART exporter, the registries, the network checks - and the models, the
+diagnosis's and the classifier's, whose answers are canned. The recipe is in the repository, under `demo/`.
 
 Being a recording, it changes nothing: approving, dismissing, refreshing or
 saving a setting answers with a note that this is a demo, and times shift so

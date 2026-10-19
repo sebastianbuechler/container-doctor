@@ -113,7 +113,7 @@ def _boxes() -> list[Box]:
             256 * MIB, health="healthy", networks=("proxy",), logs="quiet",
             source="https://github.com/gethomepage/homepage"),
         Box("uptime-kuma", "tools", "uptime-kuma", "louislam/uptime-kuma:1", 1.1, 140 * MIB,
-            512 * MIB, health="healthy", networks=("proxy",), logs="quiet",
+            512 * MIB, health="healthy", networks=("proxy",), logs="kuma",
             labels={"doctor.mode": "auto", "doctor.actions": "restart_container"},
             source="https://github.com/louislam/uptime-kuma"),
         Box("it-tools", "tools", "it-tools", "corentinth/it-tools:2024.10.22-7ca5933", 0.0,
@@ -163,6 +163,15 @@ NETWORKS = {
 LOG_SCRIPTS: dict[str, tuple[int, list[str], list[str], float]] = {
     # name: (seconds between lines, normal lines, error lines, share of errors)
     "quiet": (300, ["INFO  healthcheck ok", "INFO  served 14 requests in the last 5m"], [], 0.0),
+    # A monitor's job is to log other sites failing: errors to the rules, noise
+    # to the classifier.
+    "kuma": (15, [
+        "[MONITOR] INFO: Monitor #3 'jellyfin': Successful Response: 23 ms | Interval: 60 seconds",
+        "[MONITOR] INFO: Monitor #7 'paperless': Successful Response: 41 ms | Interval: 60 seconds",
+    ], [
+        "[MONITOR] ERROR: Monitor #12 'club-website': Failing: timeout of 48000ms exceeded "
+        "| Interval: 60 seconds | Type: http | Down Count: 0 | Resend Interval: 0",
+    ], 0.5),
     "traefik": (45, [
         'level=info msg="Configuration loaded from providers" providerName=docker',
         'level=debug msg="Skipping same configuration" providerName=docker',

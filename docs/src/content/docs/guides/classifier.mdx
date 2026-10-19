@@ -3,6 +3,8 @@ title: "The classifier"
 description: "A second opinion on noisy signals before they become incidents."
 ---
 
+import Screenshot from '../../../components/Screenshot.astro';
+
 The rules are exact about facts and blunt about judgement. An exit code of 137
 is a fact. "Five lines matching `error`" may be a database failing, or an app
 that logs its retries at ERROR. The classifier asks a decision model about the
@@ -32,6 +34,12 @@ change timeline), capped at about 3,000 tokens.
 
 The policy engine still decides every action, and the diagnosis still runs on
 whatever opens. It is shown the classifier's read as a hint it may overrule.
+
+Every verdict is on the LLM page, and each incident it reviewed shows the
+verdict in a line above the diagnosis, with the probabilities behind it under
+**Details**. The [live demo](/container-doctor/getting-started/live-demo/) runs it in `on`.
+
+<Screenshot name="classifier" alt="The classifier panel on the LLM page: calls today, signals reviewed this week, three hidden as noise, and a list of verdicts - a restart loop lowered to warning, a failing health check raised to critical, an API-key error left to the rule, and monitor errors hidden as noise." />
 
 **Setting it up.** The backend is a decision model on OpenRouter's Decisions
 API, TypeSafe's Jev by default (`typesafe/jev-1.13`, pinned so verdicts don't

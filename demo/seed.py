@@ -10,11 +10,18 @@ import math
 import random
 from datetime import datetime, timedelta
 
+import dataclasses
+from types import SimpleNamespace
+
 from app import changes, store as store_module
+from app.classifier import ELIGIBLE, QUESTIONS, Classifier
+from app.config import Settings
+from app.decision import Decision, read_answers, wire_questions
 from app.diagnoser import DIAGNOSIS_SCHEMA, _cost, system_prompt
 from app.store import Store
 
 from . import world
+from .model import _choice
 from .world import BOXES, MIB, STARTED, iso
 
 DAYS = 14
@@ -235,12 +242,15 @@ def past_incidents(store: Store, at: type[_Clock]) -> None:
         at.at = opened
         container = {"name": name, "image": box.image if box else "", "state": "running",
                      "health": "unhealthy" if kind == "unhealthy" else "healthy"}
+        evidence = {"kind": kind, "summary": summary, "detected_at": iso(opened),
+                    "container": container, "logs": "\n".join(diagnosis["evidence_used"])}
+        if kind in ELIGIBLE and (name, kind) in PAST_VERDICTS:
+            evidence["classification"] = _classify(store, at, name, kind, severity, summary,
+                                                   PAST_VERDICTS[(name, kind)])
         incident_id = store.open_incident(
             container_id=box.id if box else "", container_name=name,
             image=box.image if box else "", kind=kind, fingerprint=f"demo:{name}:{kind}:{days}",
-            severity=severity, summary=summary,
-            evidence={"kind": kind, "summary": summary, "detected_at": iso(opened),
-                      "container": container, "logs": "\n".join(diagnosis["evidence_used"])},
+            severity=severity, summary=summary, evidence=evidence,
             mode="suggest", lines=diagnosis["evidence_used"][:1])
         at.at = opened + timedelta(seconds=40)
         _call(store, at, name, kind, summary, diagnosis, incident_id)
@@ -277,6 +287,115 @@ def _call(store: Store, at: type[_Clock], name: str, kind: str, summary: str,
         "response": json.dumps(answer, indent=2),
     })
     _usage(store, input_tokens, output_tokens, cached, cost)
+
+
+# The classifier's verdicts on the past incidents of a judgement kind - all
+# of them real enough to open - and on signals it hid as noise, which never
+# became incidents. Answers in the Decisions API's shape, as model.py's.
+PAST_VERDICTS = {
+    ("stirling-pdf", "high_memory"): {
+        "verdict": _choice("expected_transient", {"expected_transient": 0.71, "real_fault": 0.2,
+                                                  "benign_noise": 0.07, "unclear": 0.02}),
+        "severity": _choice("warning", {"warning": 0.64, "info": 0.33, "critical": 0.03}),
+        "cause": _choice("resources", {"resources": 0.83, "unknown": 0.17}),
+        "self_heals": {"noul": 0.77},
+    },
+    ("jellyfin", "unhealthy"): {
+        "verdict": _choice("real_fault", {"real_fault": 0.89, "expected_transient": 0.08,
+                                          "benign_noise": 0.02, "unclear": 0.01}),
+        "severity": _choice("warning", {"warning": 0.7, "critical": 0.27, "info": 0.03}),
+        "cause": _choice("image", {"image": 0.46, "resources": 0.31, "unknown": 0.23}),
+        "self_heals": {"noul": 0.12},
+    },
+    ("radarr", "log_errors"): {
+        "verdict": _choice("expected_transient", {"expected_transient": 0.62, "real_fault": 0.31,
+                                                  "benign_noise": 0.05, "unclear": 0.02}),
+        "severity": _choice("info", {"info": 0.58, "warning": 0.4, "critical": 0.02}),
+        "cause": _choice("dependency", {"dependency": 0.86, "network": 0.1, "unknown": 0.04}),
+        "self_heals": {"noul": 0.81},
+    },
+    ("uptime-kuma", "unhealthy"): {
+        "verdict": _choice("real_fault", {"real_fault": 0.84, "expected_transient": 0.13,
+                                          "benign_noise": 0.02, "unclear": 0.01}),
+        "severity": _choice("warning", {"warning": 0.81, "critical": 0.14, "info": 0.05}),
+        "cause": _choice("storage", {"storage": 0.57, "resources": 0.3, "unknown": 0.13}),
+        "self_heals": {"noul": 0.22},
+    },
+}
+
+HIDDEN = [
+    # days ago, container, kind, rule severity, summary, answers
+    (12.4, "jellyfin", "log_errors", "warning",
+     "jellyfin logged 9 lines matching the error pattern in the last 120 lines",
+     {"verdict": _choice("benign_noise", {"benign_noise": 0.93, "expected_transient": 0.04,
+                                          "real_fault": 0.02, "unclear": 0.01}),
+      "severity": _choice("info", {"info": 0.9, "warning": 0.09, "critical": 0.01}),
+      "cause": _choice("storage", {"storage": 0.52, "unknown": 0.48}),
+      "self_heals": {"noul": 0.91}}),
+    (9.9, "sabnzbd", "high_cpu", "warning",
+     "sabnzbd has held 88% of the host's CPU (704% of one core) for 4 consecutive checks",
+     {"verdict": _choice("expected_transient", {"expected_transient": 0.95, "real_fault": 0.03,
+                                                "benign_noise": 0.01, "unclear": 0.01}),
+      "severity": _choice("info", {"info": 0.84, "warning": 0.15, "critical": 0.01}),
+      "cause": _choice("resources", {"resources": 0.9, "unknown": 0.1}),
+      "self_heals": {"noul": 0.94}}),
+    (7.3, "homepage", "log_errors", "warning",
+     "homepage logged 6 lines matching the error pattern in the last 120 lines",
+     {"verdict": _choice("benign_noise", {"benign_noise": 0.91, "expected_transient": 0.05,
+                                          "real_fault": 0.03, "unclear": 0.01}),
+      "severity": _choice("info", {"info": 0.87, "warning": 0.12, "critical": 0.01}),
+      "cause": _choice("network", {"network": 0.66, "dependency": 0.3, "unknown": 0.04}),
+      "self_heals": {"noul": 0.88}}),
+    (4.6, "jellyfin", "log_errors", "warning",
+     "jellyfin logged 12 lines matching the error pattern in the last 120 lines",
+     {"verdict": _choice("benign_noise", {"benign_noise": 0.92, "expected_transient": 0.05,
+                                          "real_fault": 0.02, "unclear": 0.01}),
+      "severity": _choice("info", {"info": 0.89, "warning": 0.1, "critical": 0.01}),
+      "cause": _choice("storage", {"storage": 0.55, "unknown": 0.45}),
+      "self_heals": {"noul": 0.9}}),
+    (2.1, "sabnzbd", "high_cpu", "warning",
+     "sabnzbd has held 91% of the host's CPU (728% of one core) for 4 consecutive checks",
+     {"verdict": _choice("expected_transient", {"expected_transient": 0.96, "real_fault": 0.02,
+                                                "benign_noise": 0.01, "unclear": 0.01}),
+      "severity": _choice("info", {"info": 0.86, "warning": 0.13, "critical": 0.01}),
+      "cause": _choice("resources", {"resources": 0.92, "unknown": 0.08}),
+      "self_heals": {"noul": 0.95}}),
+]
+
+def _classify(store: Store, at: type[_Clock], name: str, kind: str, severity: str,
+              summary: str, answers: dict) -> dict:
+    """One verdict, worked out by the classifier's own judge() and written the
+    way a live one is: the verdict, its call in the log, and its cost."""
+    settings = dataclasses.replace(Settings(), classifier_mode="on")
+    tokens_in = random.randint(1400, 2600)
+    cost = tokens_in * settings.classifier_price_per_mtok / 1_000_000
+    decision = Decision(read_answers(answers, QUESTIONS), settings.classifier_model, True,
+                        tokens_in, 24, cost, random.randint(380, 900))
+    signal = SimpleNamespace(kind=kind, severity=severity, container={"name": name},
+                             details={}, fingerprint=f"demo:{name}:{kind}")
+    verdict = Classifier(settings, None, store).judge(signal, decision).to_dict()
+    state = f"## Incident\nkind: {kind}\nrule summary: {summary}\n\n## Container\nname: {name}\n"
+    store.record_classification(f"demo:{name}:{kind}:{at.at:%j%H}", signal.fingerprint, name,
+                                kind, severity, verdict)
+    store.record_llm_call({
+        "at": iso(at.at), "purpose": "classifier_signal", "provider": "openrouter",
+        "model": settings.classifier_model, "endpoint": settings.classifier_url, "status": "ok",
+        "latency_ms": decision.latency_ms, "input_tokens": tokens_in, "output_tokens": 24,
+        "cost_usd": cost,
+        "request": {"kind": "decision", "system": json.dumps(wire_questions(QUESTIONS), indent=2),
+                    "prompt": state, "schema_name": "classifier_signal"},
+        "response": json.dumps(answers, indent=2),
+    })
+    store.reserve_classifier_call(0)
+    store.add_classifier_usage(cost, tokens_in, 24)
+    return verdict
+
+
+def hidden_signals(store: Store, at: type[_Clock]) -> None:
+    """Signals the classifier hid as noise: in its log, never incidents."""
+    for days, name, kind, severity, summary, answers in HIDDEN:
+        at.at = STARTED - timedelta(days=days)
+        _classify(store, at, name, kind, severity, summary, answers)
 
 
 def _usage(store: Store, input_tokens: int, output_tokens: int, cached: int, cost: float) -> None:
@@ -316,6 +435,7 @@ def seed(db_path: str) -> None:
         disks(store, at)
         memory(store, at)
         past_incidents(store, at)
+        hidden_signals(store, at)
         briefings(store, at)
     history_of_changes(store)
     store.set_host_state("boot_time", iso(STARTED - timedelta(days=23, hours=4)))
