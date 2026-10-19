@@ -49,8 +49,12 @@
       // The same endpoint asked another way (a longer page, another filter).
       const near = Object.keys(data.responses).find((k) => k.split("?")[0] === url.pathname);
       hit = near && data.responses[near];
+      if (hit) console.debug("demo: answered", key, "with", near);
     }
-    if (!hit) return answer(404, JSON.stringify({ detail: "Not part of the demo recording." }));
+    if (!hit) {
+      console.debug("demo: not recorded", key);
+      return answer(404, JSON.stringify({ detail: "Not part of the demo recording." }));
+    }
     return answer(200, moved(hit.body), hit.type);
   }
 
@@ -63,7 +67,10 @@
     return realFetch(input, init);
   };
 
-  // No server to stream from: a stream that opens, stays open and says nothing.
+  // No server to stream from: a stream that opens, says what the real one
+  // says first - the whole snapshot, which everything drawn from the poll
+  // waits for - and then repeats it on the poll interval, stamped as just
+  // polled, so the dashboard reads as live rather than overdue.
   class QuietEventSource extends EventTarget {
     constructor(url) {
       super();
@@ -72,15 +79,33 @@
       this.onmessage = null;
       this.onerror = null;
       this.onopen = null;
-      setTimeout(() => {
-        if (this.readyState !== 0) return;
-        this.readyState = 1;
-        const opened = new Event("open");
-        this.dispatchEvent(opened);
-        if (this.onopen) this.onopen(opened);
-      }, 300);
+      this.timer = null;
+      this.opening = this.open();
     }
-    close() { this.readyState = 2; }
+    async open() {
+      const snapshot = await replay(new URL("/api/state", location.origin), "GET");
+      const payload = snapshot.ok ? await snapshot.json() : null;
+      if (this.readyState !== 0) return;
+      this.readyState = 1;
+      this.emit(new Event("open"), "onopen");
+      if (!payload) return;
+      const poll = () => {
+        const at = new Date().toISOString();
+        this.emit(new MessageEvent("message", {
+          data: JSON.stringify({ type: "state", at, payload: { ...payload, last_poll_at: at } }),
+        }), "onmessage");
+      };
+      poll();
+      this.timer = setInterval(poll, 1000 * (Number(payload.poll_interval_seconds) || 30));
+    }
+    emit(event, handler) {
+      this.dispatchEvent(event);
+      if (this[handler]) this[handler](event);
+    }
+    close() {
+      this.readyState = 2;
+      clearInterval(this.timer);
+    }
   }
   QuietEventSource.CONNECTING = 0;
   QuietEventSource.OPEN = 1;

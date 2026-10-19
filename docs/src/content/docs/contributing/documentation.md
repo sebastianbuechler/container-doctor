@@ -58,9 +58,14 @@ Playwright. It writes:
 
 The demo is the dashboard's own `app/web/static`, copied into the site at build
 time by `docs/scripts/build-demo.mjs`, with `docs/demo/demo-shim.js` answering
-its API calls from `api.json`. So a change to the dashboard reaches the demo by
-itself, but a change to what an endpoint returns needs a new recording, or the
-demo shows the new page with the old data.
+its API calls from `api.json`. It also stands in for the live stream
+(`/api/stream`): like the real one, it sends the recorded snapshot (`/api/state`)
+first - every panel drawn from the poll waits for it - and again on each poll
+interval, stamped as just polled. So a change to the dashboard reaches the demo
+by itself, but a change to what an endpoint or the stream sends needs a new
+recording, or the demo shows the new page with the old data. In the browser's
+console, the shim logs every request the recording cannot answer
+(`demo: not recorded ...`).
 
 To change the scenario - containers, incidents, what the model says - edit
 `demo/world.py`, `demo/seed.py` and `demo/model.py`. To look at it live:
