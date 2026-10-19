@@ -28,13 +28,14 @@ export default defineConfig({
     starlight({
       title: 'Container Doctor',
       description:
-        'AI triage for the Docker containers on one host: rules detect, a model explains, you decide.',
+        'AI triage for self-hosted Docker: rules catch the problem, a model explains it, you decide.',
       logo: { src: './src/assets/logo.svg' },
       favicon: '/favicon.svg',
       social: [{ icon: 'github', label: 'GitHub', href: repo }],
       editLink: { baseUrl: `${repo}/edit/main/docs/` },
       lastUpdated: true,
       customCss: ['./src/styles/custom.css'],
+      components: { Hero: './src/components/Hero.astro' },
       head: analytics ? [analytics] : [],
       // Fails the build on a link to a page or heading that does not exist.
       // The demo is a static copy of the dashboard (scripts/build-demo.mjs),

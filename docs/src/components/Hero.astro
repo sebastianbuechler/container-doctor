@@ -1,0 +1,63 @@
+---
+// The landing page's hero, centered and without an image: the dashboard
+// itself follows right below it (Tour.astro). Pages that set no
+// `heroLayout` keep Starlight's own hero.
+import Default from '@astrojs/starlight/components/Hero.astro';
+import { LinkButton } from '@astrojs/starlight/components';
+
+const { data } = Astro.locals.starlightRoute.entry;
+const centered = (data as { heroLayout?: string }).heroLayout === 'centered';
+const { title = data.title, tagline, actions = [] } = data.hero || {};
+---
+
+{
+	!centered ? (
+		<Default />
+	) : (
+		<div class="hero">
+			<h1 id="_top" data-page-title set:html={title} />
+			{tagline && <p class="tagline" set:html={tagline} />}
+			{actions.length > 0 && (
+				<div class="actions">
+					{actions.map(({ icon, link: href, text, variant }) => (
+						<LinkButton {href} {variant} icon={icon?.name}>
+							{text}
+						</LinkButton>
+					))}
+				</div>
+			)}
+		</div>
+	)
+}
+
+<style>
+	.hero {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 1.1rem;
+		text-align: center;
+		padding-block: clamp(2rem, calc(1rem + 6vmin), 4.5rem) 1rem;
+	}
+	h1 {
+		margin: 0;
+		max-width: 24ch;
+		font-size: clamp(var(--sl-text-3xl), calc(0.25rem + 5vw), var(--sl-text-6xl));
+		line-height: var(--sl-line-height-headings);
+		font-weight: 650;
+		color: var(--sl-color-white);
+	}
+	.tagline {
+		margin: 0;
+		max-width: 44ch;
+		font-size: clamp(var(--sl-text-base), calc(0.0625rem + 2vw), var(--sl-text-xl));
+		color: var(--sl-color-gray-2);
+	}
+	.actions {
+		display: flex;
+		flex-wrap: wrap;
+		justify-content: center;
+		gap: 1rem;
+		margin-top: 0.5rem;
+	}
+</style>

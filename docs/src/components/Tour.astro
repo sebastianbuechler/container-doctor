@@ -1,0 +1,101 @@
+---
+// A few views of the dashboard behind tabs - radio buttons, no script. Tabs
+// underlined, not pills, so they do not read as more of the hero's buttons.
+import Showcase from './Showcase.astro';
+
+const views = [
+	{ id: 'overview', label: 'Overview', phone: 'phone',
+		text: 'One briefing: what is wrong, and what to do first.' },
+	{ id: 'incident', label: 'Incident',
+		text: 'What the rules caught, why it happened, and the fix waiting for your OK.' },
+	{ id: 'storage', label: 'Storage',
+		text: 'How full each disk is, how fast it fills, and whether it is healthy.' },
+	{ id: 'updates', label: 'Updates',
+		text: 'Newer images, and what their release notes warn about.' },
+];
+---
+
+<div class="tour">
+	{views.map((view, i) => <input type="radio" name="tour" id={`tour-${view.id}`} checked={i === 0} aria-label={view.label} />)}
+	<div class="tabs">
+		{views.map((view) => <label for={`tour-${view.id}`}>{view.label}</label>)}
+	</div>
+	{
+		views.map((view) => (
+			<div class:list={['panel', `panel-${view.id}`]}>
+				<p>{view.text}</p>
+				<Showcase desktop={view.id} phone={view.phone} alt={`The ${view.label.toLowerCase()} view of the dashboard`} />
+			</div>
+		))
+	}
+</div>
+
+<style>
+	.tour {
+		margin-top: 1.5rem;
+	}
+	.tour input {
+		position: absolute;
+		opacity: 0;
+		pointer-events: none;
+	}
+	.tabs {
+		display: flex;
+		justify-content: center;
+		gap: 1.75rem;
+		border-bottom: 1px solid var(--sl-color-hairline);
+		max-width: 40rem;
+		margin-inline: auto;
+	}
+	.tabs label {
+		margin: 0; /* not Starlight's spacing between siblings */
+		cursor: pointer;
+		padding: 0.5rem 0.1rem;
+		margin-bottom: -1px;
+		border-bottom: 2px solid transparent;
+		font-size: var(--sl-text-sm);
+		color: var(--sl-color-gray-3);
+	}
+	.tabs label:hover {
+		color: var(--sl-color-white);
+	}
+	.panel {
+		display: none;
+		text-align: center;
+	}
+	.panel p {
+		margin: 1rem 0 1.5rem;
+		color: var(--sl-color-gray-3);
+	}
+	#tour-overview:checked ~ .panel-overview,
+	#tour-incident:checked ~ .panel-incident,
+	#tour-storage:checked ~ .panel-storage,
+	#tour-updates:checked ~ .panel-updates {
+		display: block;
+	}
+	#tour-overview:checked ~ .tabs label[for='tour-overview'],
+	#tour-incident:checked ~ .tabs label[for='tour-incident'],
+	#tour-storage:checked ~ .tabs label[for='tour-storage'],
+	#tour-updates:checked ~ .tabs label[for='tour-updates'] {
+		border-bottom-color: var(--sl-color-accent);
+		color: var(--sl-color-white);
+		font-weight: 600;
+	}
+	#tour-overview:focus-visible ~ .tabs label[for='tour-overview'],
+	#tour-incident:focus-visible ~ .tabs label[for='tour-incident'],
+	#tour-storage:focus-visible ~ .tabs label[for='tour-storage'],
+	#tour-updates:focus-visible ~ .tabs label[for='tour-updates'] {
+		outline: 2px solid var(--sl-color-accent);
+		outline-offset: 2px;
+	}
+
+	@media (max-width: 50rem) {
+		.tabs {
+			gap: 1.1rem;
+		}
+		.panel p {
+			margin: 0.75rem 0 1rem;
+			font-size: var(--sl-text-sm);
+		}
+	}
+</style>
