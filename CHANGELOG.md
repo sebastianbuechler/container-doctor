@@ -11,8 +11,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The documentation's start page leads with the dashboard: a short pitch, a
   tour of four views (with the phone version, side by side on a phone), and
   how it works in three steps.
+- Storage pools are told apart as SHR layers, a single RAID, or an SSD cache
+  in front of a volume. A cache is drawn in its own colour as *SSD cache for
+  Volume N* rather than as a layer, only layered pools explain SHR, and the
+  "Drive N is not in this layer" notes are gone.
+- Pools and volumes are named as Storage Manager names them, also when a
+  DSM 6 pool (`vg1000`) sits beside a newer one.
+- A SATA SSD's wear warns at `DOCTOR_SMART_WEAR_PCT`, as NVMe already did.
 
 ### Added
+
+- Each volume shows its filesystem (Btrfs, ext4, XFS), mounted in the doctor
+  or not, and a pool shows how much of it is not in a volume yet.
+- A drive's page shows more of SMART: SSD or rpm, link speed, data written and
+  read, SSD life used, each sector counter (zeros included), CRC errors, head
+  parks, logged errors and failed self-tests.
 
 - The live demo runs the classifier in `on`, with two weeks of its verdicts:
   noise it hid, severities it raised and lowered, and signals it left to the
