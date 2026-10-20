@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-20
+
 ### Changed
 
 - The documentation's start page leads with the dashboard: a short pitch, a
@@ -130,5 +132,6 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
 
-[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.1.0...v0.2.0
