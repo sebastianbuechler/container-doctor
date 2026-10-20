@@ -71,14 +71,19 @@ class FakeSys:
             self.write(name, "md", f"dev-{member}", "errors", text=str((errors or {}).get(member, 0)))
         self.mkdir(name, "holders")
 
-    def dm(self, device: str, name: str, dev: str, slaves: list[str]) -> None:
+    def dm(self, device: str, name: str, dev: str, slaves: list[str],
+           size: int = 35 * TB) -> None:
         self.write(device, "dm", "name", text=name)
         self.write(device, "dev", text=dev)
-        self.write(device, "size", text=str(35 * TB // 512))
+        self.write(device, "size", text=str(size // 512))
         self.mkdir(device, "holders")
         for slave in slaves:
             self.mkdir(device, "slaves", slave)
             self.mkdir(slave, "holders", device)
+
+    def filesystem(self, *parts: str) -> None:
+        """/sys/fs/btrfs/<uuid>/devices/dm-N, or /sys/fs/ext4/dm-N."""
+        os.makedirs(os.path.join(self.root, "fs", *parts), exist_ok=True)
 
     def mounts(self, *lines: str) -> None:
         with open(self.mountinfo, "w", encoding="utf-8") as handle:
@@ -173,6 +178,110 @@ md2 : active raid1 sata1p5[0] sata2p5[1]
         pools = raid.inspect(raid.parse(text), fake.root, fake.mountinfo, [])
         self.assertEqual([(p["arrays"], p["volumes"][0]["name"]) for p in pools],
                          [(["md2"], "Volume 1"), (["md3"], "Volume 2")])
+
+
+# The NAS from the screenshots: Storage Pool 1 is DSM 6's SHR, two layers in
+# vg1000 with no volume_N name; Storage Pool 2 came later, a raid1 of two
+# SSDs with one partial volume on it and a third SSD as its read cache.
+TWO_POOLS = """md5 : active raid1 sata7p1[0]
+      3905109440 blocks super 1.2 [1/1] [U]
+
+md4 : active raid1 sata5p3[0] sata6p3[1]
+      1855409088 blocks super 1.2 [2/2] [UU]
+      [==============>......]  resync = 70.1% (1300654080/1855409088) finish=38.0min speed=243241K/sec
+
+md3 : active raid5 sata1p6[0] sata2p6[1] sata3p6[2]
+      100 blocks super 1.2 level 5, 64k chunk, algorithm 2 [3/3] [UUU]
+
+md2 : active raid5 sata1p5[0] sata2p5[1] sata3p5[2]
+      100 blocks super 1.2 level 5, 64k chunk, algorithm 2 [3/3] [UUU]
+
+md1 : active raid1 sata1p2[0] sata2p2[1] sata3p2[2] sata5p2[3] sata6p2[4]
+      2097088 blocks [5/5] [UUUUU]
+"""
+
+
+def two_pools() -> FakeSys:
+    fake = FakeSys()
+    for n in (1, 2, 3):
+        fake.disk(f"sata{n}", BIG, "WDC WD60EFAX", [f"sata{n}p2", f"sata{n}p5", f"sata{n}p6"])
+    for n in (5, 6):
+        fake.disk(f"sata{n}", 2 * TB, "Samsung SSD 870 EVO 2TB", [f"sata{n}p2", f"sata{n}p3"])
+    fake.disk("sata7", 4 * TB, "Samsung SSD 870 EVO 4TB", ["sata7p1"])
+    fake.md("md1", ["sata1p2", "sata2p2", "sata3p2", "sata5p2", "sata6p2"])
+    fake.md("md2", ["sata1p5", "sata2p5", "sata3p5"])
+    fake.md("md3", ["sata1p6", "sata2p6", "sata3p6"])
+    fake.md("md4", ["sata5p3", "sata6p3"])
+    fake.md("md5", ["sata7p1"])
+    fake.dm("dm-0", "vg1000-lv", "253:0", ["md2", "md3"])
+    fake.dm("dm-1", "cachedev_0", "253:1", ["dm-0"])
+    fake.dm("dm-2", "vg1-volume_2", "253:2", ["md4"], size=1000 * 1024 ** 3)
+    fake.dm("dm-3", "vg1-syno_vg_reserved_area", "253:3", ["md4"])
+    fake.dm("dm-4", "shared_cache_vg1-alloc_cache_1_1", "253:4", ["md5"])
+    fake.dm("dm-5", "shared_cache_vg1-syno_vg_reserved_area", "253:5", ["md5"])
+    fake.dm("dm-6", "cachedev_1", "253:6", ["dm-2", "dm-4"], size=1000 * 1024 ** 3)
+    fake.filesystem("btrfs", "0f3c9a5e-5d2b-4c1e-9a77-2f1d3c4b5a69", "devices", "dm-6")
+    fake.mounts("650 600 253:1 /docker/container-doctor /data rw,relatime - ext4 "
+                "/dev/mapper/cachedev_0 rw")
+    return fake
+
+
+class TwoPoolsAndAnSsdCache(unittest.TestCase):
+    def setUp(self):
+        fake = two_pools()
+        self.pools = raid.inspect(raid.parse(TWO_POOLS), fake.root, fake.mountinfo, ["/data"])
+
+    def test_the_cache_is_no_layer_and_joins_no_pool(self):
+        self.assertEqual([p["arrays"] for p in self.pools], [["md2", "md3"], ["md4"]])
+        self.assertEqual([p["caches"] for p in self.pools], [[], ["md5"]])
+
+    def test_shr_layers_are_told_from_a_single_raid(self):
+        self.assertEqual([p["layout"] for p in self.pools], ["shr", "single"])
+
+    def test_pools_are_counted_when_dsm_6_left_one_without_a_number(self):
+        # vg1 is Storage Pool 2 here: vg1000 was there first.
+        self.assertEqual([p["pool"] for p in self.pools], ["Storage Pool 1", "Storage Pool 2"])
+
+    def test_dsm_6s_volume_gets_the_number_left_free(self):
+        self.assertEqual([[v["name"] for v in p["volumes"]] for p in self.pools],
+                         [["Volume 1"], ["Volume 2"]])
+
+    def test_each_volume_says_its_filesystem_mounted_here_or_not(self):
+        self.assertEqual([p["volumes"][0]["filesystem"] for p in self.pools], ["ext4", "btrfs"])
+
+    def test_the_cache_is_on_the_volume_it_serves(self):
+        self.assertEqual([p["volumes"][0]["cache"] for p in self.pools], [[], ["md5"]])
+
+    def test_a_partial_volume_is_smaller_than_its_pool(self):
+        volume = self.pools[1]["volumes"][0]
+        self.assertEqual(volume["size_bytes"], 1000 * 1024 ** 3)
+        self.assertGreater(self.pools[1]["size_bytes"], volume["size_bytes"])
+
+    def test_elsewhere_pools_keep_no_synology_names(self):
+        fake = two_pools()
+        pools = raid.inspect(raid.parse(TWO_POOLS), fake.root, fake.mountinfo, ["/data"],
+                             synology=False)
+        self.assertEqual([p["pool"] for p in pools], ["", ""])
+        self.assertEqual([p["layout"] for p in pools], ["lvm", "single"])
+        self.assertEqual(pools[0]["volumes"][0]["name"], "cachedev_0")
+
+    def test_older_dsm_hands_the_cache_array_to_cachedev_directly(self):
+        fake = FakeSys()
+        for n in (1, 2, 3):
+            fake.disk(f"sata{n}", BIG, "X", [f"sata{n}p3"])
+        fake.md("md2", ["sata1p3", "sata2p3"])
+        fake.md("md3", ["sata3p3"])
+        fake.dm("dm-0", "vg1-volume_1", "253:0", ["md2"])
+        fake.dm("dm-1", "cachedev_0", "253:1", ["dm-0", "md3"])
+        text = """md3 : active raid1 sata3p3[0]
+      100 blocks super 1.2 [1/1] [U]
+
+md2 : active raid1 sata1p3[0] sata2p3[1]
+      100 blocks super 1.2 [2/2] [UU]
+"""
+        [pool] = raid.inspect(raid.parse(text), fake.root, fake.mountinfo, [])
+        self.assertEqual((pool["arrays"], pool["caches"], pool["pool"]),
+                         (["md2"], ["md3"], "Storage Pool 1"))
 
 
 class TheDrivesBehindEachArray(unittest.TestCase):

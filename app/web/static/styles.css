@@ -1540,6 +1540,10 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .pool-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .pool-head span { color: var(--ink-2); }
 .pool-head code { font-family: var(--mono); font-size: 12px; }
+.pool-volume { margin: -4px 0 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px; }
+.pool-volume strong { font-weight: 600; }
+.pool-volume span { color: var(--ink-2); }
+.pool-volume code { font-family: var(--mono); font-size: 11.5px; }
 
 /* --- drive bays ------------------------------------------------------------ */
 
@@ -1549,6 +1553,8 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
   --layer-1: color-mix(in srgb, var(--accent) 55%, var(--surface));
   --layer-2: color-mix(in srgb, var(--accent) 32%, var(--surface));
   --layer-3: color-mix(in srgb, var(--good) 60%, var(--surface));
+  /* An SSD cache: in front of a volume, none of its data. */
+  --layer-cache: color-mix(in srgb, #a78bfa 70%, var(--surface));
 }
 .bays-wrap { display: grid; gap: 8px; }
 .bays {
@@ -1620,6 +1626,7 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .bay-seg[data-layer="1"], .bay-swatch[data-layer="1"] { background: var(--layer-1); }
 .bay-seg[data-layer="2"], .bay-swatch[data-layer="2"] { background: var(--layer-2); }
 .bay-seg[data-layer="3"], .bay-swatch[data-layer="3"] { background: var(--layer-3); }
+.bay-seg[data-layer="cache"], .bay-swatch[data-layer="cache"] { background: var(--layer-cache); }
 .bay-seg.bay-free, .bay-swatch.bay-free {
   background: transparent;
   box-shadow: inset 0 0 0 1px var(--border);
@@ -1638,6 +1645,7 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .meter-fill[data-layer="1"] { background-color: var(--layer-1); }
 .meter-fill[data-layer="2"] { background-color: var(--layer-2); }
 .meter-fill[data-layer="3"] { background-color: var(--layer-3); }
+.meter-fill[data-layer="cache"] { background-color: var(--layer-cache); }
 .bay-size {
   font-size: 11.5px;
   font-variant-numeric: tabular-nums;

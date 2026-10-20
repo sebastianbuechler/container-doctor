@@ -67,7 +67,21 @@ history never keeps a disk from spinning down.
 | Drive | Warning | Critical |
 |---|---|---|
 | Hard disk | Any reallocated, pending, offline-uncorrectable or reported-uncorrectable sector; new interface CRC errors; at 55 °C or more | It reports itself as failing |
+| SATA SSD | As a hard disk, and 90% of its rated endurance used | As a hard disk |
 | NVMe | Media errors; 90% of its rated endurance used; at 70 °C or more | A controller critical warning; spare capacity at or below its threshold |
+
+Select a drive on the Storage page for everything else SMART says about it:
+model, serial and firmware, whether it is an SSD or how fast it spins, its
+link speed, power-on time and power cycles, how much it has written and read
+over its life, the share of an SSD's rated endurance used, and each counter on
+its own - reallocated, pending and uncorrectable sectors, CRC errors, head
+parks, the errors it logged itself and failed self-tests - a 0 included.
+A SATA drive reports its lifetime writes in a vendor attribute whose name
+gives the unit (`Total_LBAs_Written`, `Host_Writes_32MiB`, `Host_Writes_GiB`),
+and an SSD its wear as a normalised value that counts down from 100
+(`Wear_Leveling_Count` on a Samsung, `Percent_Lifetime_Remain` on a Crucial);
+a drive that reports neither shows neither. `DOCTOR_SMART_WEAR_PCT` sets the
+endurance warning for SATA SSDs and NVMe alike.
 
 CRC errors point at the cable or the bay, not the disk, and a drive keeps its
 count forever. So the first count seen is the baseline, and only new ones are
@@ -147,6 +161,32 @@ points elsewhere or, set to `off`, turns the check off; a host without software
 RAID (or a Synology with a single Basic volume) has no arrays and the panel says
 so once.
 
+### Pools, layers and SSD caches
+
+Each storage pool is drawn as its drives, its volumes and the arrays under
+them, and the doctor tells three kinds of array apart:
+
+- **SHR layers.** Several arrays under one volume, each a layer of the pool
+  (below).
+- **A single RAID.** One array, its volumes on top: two SSDs in RAID 1 with a
+  volume that takes only part of them, say. The pool shows how much of it is
+  not in a volume yet.
+- **An SSD cache.** An array that reaches a volume through DSM's cache device
+  (`cachedev_N`) by way of a cache volume group of its own, not through the
+  volume itself. It speeds the volume up but holds none of its data, so it is
+  shown in its own colour, as *SSD cache for Volume 2*, and is no layer.
+
+Every volume says its filesystem - Btrfs, ext4, XFS - read from `/sys/fs`,
+which lists the filesystems mounted anywhere on the host, so a volume the
+doctor has no mount of is named as well as its own.
+
+Pools are named the way Storage Manager names them. DSM 7 calls a pool's
+volume group `vgN` after *Storage Pool N*. A pool made by DSM 6 has `vg1000`
+instead, and a pool added beside it then gets `vg1` although it is Storage
+Pool 2, so unless every pool has a number of its own they are counted in the
+order their arrays were made. DSM 6's volume (`vg1000-lv`) takes the lowest
+*Volume N* no other volume has.
+
 ### Why one volume shows several arrays
 
 On a Synology, SHR on drives of different sizes is not one RAID. DSM cuts every
@@ -167,7 +207,8 @@ privilege either:
 | From | Shown as |
 |---|---|
 | `/sys/block/mdN/holders`, `…/slaves`, `…/dm/name` | the arrays grouped under the volume they make up (`vg1-volume_1` → *Volume 1*, *layer 1 of 2*), with the watched path on it, found through `/proc/self/mountinfo` |
-| `/sys/block/sataN/size`, `…/device/model` | the drive bay, size and model behind each member, and why a layer has fewer drives |
+| `/sys/block/sataN/size`, `…/device/model` | the drive bay, size and model behind each member |
+| `/sys/fs/btrfs/*/devices`, `/sys/fs/ext4`, `/sys/fs/xfs` | each volume's filesystem |
 | `/sys/block/mdN/md/mismatch_cnt` after a `check` | a `raid_errors` warning if the last scrub found sectors that disagree — not on md0/md1, where swap on RAID 1 has them as a matter of course |
 | `/sys/block/mdN/md/dev-*/errors` | a `raid_errors` warning naming the drive when md has had to correct read errors from it — often the first sign of a failing disk, and one the array never reports as degraded |
 

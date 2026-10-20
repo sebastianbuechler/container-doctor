@@ -62,6 +62,40 @@ class Parsing(unittest.TestCase):
         self.assertEqual((nvme["percentage_used"], nvme["available_spare"], nvme["media_errors"]),
                          (93, 100, 0))
 
+    def test_what_a_hard_disk_has_been_through(self):
+        sata1 = self.drives["sata1"]
+        self.assertEqual((sata1["rotation_rpm"], sata1["link_bps"], sata1["error_log"]),
+                         (5400, 6e9, 0))
+        # No lifetime data from a WD Red: the exporter's bytes_* are NVMe's.
+        self.assertEqual((sata1["bytes_written"], sata1["wear_pct"]), (None, None))
+
+    def test_nvme_lifetime_data_and_wear(self):
+        nvme = self.drives["nvme0n1"]
+        self.assertEqual((nvme["bytes_written"], nvme["bytes_read"], nvme["wear_pct"],
+                          nvme["error_log"]), (1200987136000, 632098304000, 93, 2))
+
+    def test_a_sata_ssd_from_its_vendor_attributes(self):
+        attribute = ('smartctl_device_attribute{{attribute_name="{0}",attribute_value_type="{1}",'
+                     'device="sata7"}} {2}\n')
+        [drive] = smart.drives(smart.parse_metrics(
+            'smartctl_device{device="sata7",model_name="Samsung SSD 870 EVO 4TB",protocol="ATA"} 1\n'
+            'smartctl_device_rotation_rate{device="sata7"} 0\n'
+            'smartctl_device_bytes_written{device="sata7"} 0\n'
+            'smartctl_device_block_size{blocks_type="logical",device="sata7"} 512\n'
+            + attribute.format("Total_LBAs_Written", "raw", "2.5e+10")
+            + attribute.format("Total_LBAs_Read", "raw", "1e+10")
+            + attribute.format("Wear_Leveling_Count", "raw", "41")
+            + attribute.format("Wear_Leveling_Count", "value", "97")
+            + attribute.format("Load_Cycle_Count", "raw", "0")))
+        self.assertEqual((drive["bytes_written"], drive["bytes_read"], drive["wear_pct"],
+                          drive["rotation_rpm"]), (25e9 * 512, 10e9 * 512, 3, 0))
+
+    def test_writes_counted_in_the_unit_the_attribute_names(self):
+        [drive] = smart.drives(smart.parse_metrics(
+            'smartctl_device_attribute{attribute_name="Host_Writes_32MiB",'
+            'attribute_value_type="raw",device="sda"} 1000\n'))
+        self.assertEqual(drive["bytes_written"], 1000 * 32 * 1024 ** 2)
+
     def test_a_drive_asleep_is_not_a_failure(self):
         [drive] = smart.drives(smart.parse_metrics(
             'smartctl_device_smartctl_exit_status{device="sata3"} 2\n'))
@@ -108,6 +142,10 @@ class Assessment(unittest.TestCase):
     def test_ssd_wear(self):
         self.assertEqual(assess(self.drives["nvme0n1"]),
                          ("warning", ["93% of its rated write endurance used"]))
+
+    def test_a_worn_sata_ssd_is_a_warning_too(self):
+        drive = {**self.drives["sata1"], "rotation_rpm": 0, "wear_pct": 92.0}
+        self.assertEqual(assess(drive), ("warning", ["92% of its rated write endurance used"]))
 
     def test_failing_verdict_is_critical(self):
         drive = {**self.drives["sata1"], "passed": False}

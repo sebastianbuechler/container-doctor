@@ -39,6 +39,14 @@ and whose block devices are the host's:
     Added up per drive (drives()), since on SHR one disk is in several arrays,
     and remembered by the doctor, since md restarts the count on every boot.
   - /sys/block/sataN: the drive behind each member, its size and model.
+  - /sys/fs/btrfs, /sys/fs/ext4, /sys/fs/xfs: which filesystem each volume
+    holds, for volumes the doctor has no mount of as much as for its own.
+
+A storage pool is told apart three ways. Several arrays under one volume are
+SHR's layers (or plain LVM elsewhere). One array is an ordinary RAID. And an
+array that reaches its volume through DSM's cache device (`cachedev_N`) by way
+of a cache volume group - not through the volume itself - is an SSD cache: it
+speeds the volume up but holds none of its data, so it is no layer of it.
 
 All of it is optional: without /sys the panel shows what mdstat alone says.
 """
@@ -237,6 +245,8 @@ def read(path: str, system_arrays: frozenset[str] = SYSTEM_ARRAYS) -> tuple[list
 
 _VOLUME = re.compile(r"(?:^|-)volume_?(?P<n>\d+)$")
 _POOL = re.compile(r"^vg(?P<n>\d+)-")
+# The filesystems that list their devices under /sys/fs.
+_FILESYSTEMS = ("btrfs", "ext4", "ext3", "xfs", "f2fs")
 _BAY = re.compile(r"^(?:sata|sas)(?P<n>\d+)$")
 
 
@@ -308,6 +318,17 @@ class _Sys:
             return name
         return next((d for d in self._disks if self.read(d, "dm", "name") == name), "")
 
+    def above(self, device: str, depth: int = 0) -> list[str]:
+        """Everything built on this device, tops included."""
+        out: list[str] = []
+        if depth > 8:
+            return out
+        for holder in self.entries(device, "holders"):
+            for d in [holder] + self.above(holder, depth + 1):
+                if d not in out:
+                    out.append(d)
+        return out
+
     def tops(self, device: str, depth: int = 0) -> list[str]:
         """The devices at the top of everything built on this one."""
         holders = self.entries(device, "holders")
@@ -330,30 +351,48 @@ class _Sys:
     def size(self, device: str) -> int:
         return (_int(self.read(device, "size")) or 0) * 512  # always 512-byte sectors
 
+    def filesystem(self, device: str) -> str:
+        """The filesystem on a block device, mounted anywhere on the host:
+        btrfs lists its devices under /sys/fs/btrfs/<uuid>/devices, ext4 and
+        xfs keep a directory per device. "" when none of them has it."""
+        fs = os.path.join(os.path.dirname(self.block), "fs")
+        for uuid in _listdir(os.path.join(fs, "btrfs")):
+            if device in _listdir(os.path.join(fs, "btrfs", uuid, "devices")):
+                return "btrfs"
+        for kind in _FILESYSTEMS[1:]:
+            if os.path.isdir(os.path.join(fs, kind, device)):
+                return kind
+        return ""
 
-def _mounts(mountinfo_path: str) -> list[tuple[str, str, str]]:
-    """(mount point, major:minor, source) for every mount this process sees."""
-    out: list[tuple[str, str, str]] = []
+
+def _mounts(mountinfo_path: str) -> list[tuple[str, str, str, str]]:
+    """(mount point, major:minor, source, type) for every mount this process sees."""
+    out: list[tuple[str, str, str, str]] = []
     for line in _read(mountinfo_path).splitlines():
         head, _, tail = line.partition(" - ")
         fields, rest = head.split(), tail.split()
         if len(fields) >= 5 and len(rest) >= 2:
             point = fields[4].replace("\\040", " ")
-            out.append((point, fields[2], rest[1]))
+            out.append((point, fields[2], rest[1], rest[0]))
     return out
 
 
-def _mount_device(path: str, mounts: list[tuple[str, str, str]], sysfs: _Sys) -> str:
-    """The block device a path lives on. A bind mount carries its source's
-    device, so the doctor's /data names the host's volume."""
+def _mount_device(path: str, mounts: list[tuple[str, str, str, str]],
+                  sysfs: _Sys) -> tuple[str, str]:
+    """(block device, filesystem type) a path lives on. A bind mount carries
+    its source's device, so the doctor's /data names the host's volume."""
     best = None
-    for point, major_minor, source in mounts:
+    for point, major_minor, source, kind in mounts:
         inside = path == point or path.startswith(point.rstrip("/") + "/")
         if inside and (best is None or len(point) > len(best[0])):
-            best = (point, major_minor, source)
+            best = (point, major_minor, source, kind)
     if best is None:
-        return ""
-    _, major_minor, source = best
+        return "", ""
+    _, major_minor, source, kind = best
+    return _source_device(major_minor, source, sysfs), kind
+
+
+def _source_device(major_minor: str, source: str, sysfs: _Sys) -> str:
     # btrfs gives every subvolume an anonymous 0:N device; the source is real.
     if not major_minor.startswith("0:"):
         device = sysfs.by_dev(major_minor)
@@ -366,12 +405,29 @@ def _mount_device(path: str, mounts: list[tuple[str, str, str]], sysfs: _Sys) ->
     return ""
 
 
-def _volume_label(chain_names: list[str], fallback: str) -> str:
+def _volume_number(chain_names: list[str]) -> int | None:
     for name in chain_names:
         match = _VOLUME.search(name)
         if match:
-            return f"Volume {match['n']}"
-    return fallback
+            return int(match["n"])
+    return None
+
+
+def _is_cache(array: str, tops: list[str], sysfs: _Sys) -> bool:
+    """Whether an array is an SSD cache in front of a volume rather than part
+    of it. DSM 7 puts the cache SSDs in a volume group of their own
+    (shared_cache_vg1-alloc_cache_1_1) and joins it to the volume in
+    cachedev_N; older DSM hands the cache array to cachedev_N directly, beside
+    the volume it caches."""
+    between = [d for d in sysfs.above(array) if d not in tops]
+    if any("cache" in sysfs.name(d) for d in between):
+        return True
+    for top in tops:
+        slaves = sysfs.entries(top, "slaves")
+        if (array in slaves and sysfs.name(top).startswith("cachedev")
+                and any(not s.startswith("md") for s in slaves)):
+            return True
+    return False
 
 
 def inspect(arrays: list[Array], sys_root: str = "/sys",
@@ -409,12 +465,17 @@ def inspect(arrays: list[Array], sys_root: str = "/sys",
             })
         array.drives.sort(key=lambda d: _natural(d["disk"] or d["member"]))
 
-    # Arrays that share anything built on top of them are one storage pool.
-    data = [a for a in arrays if not a.system and a.state != "inactive"]
+    # Arrays that share anything built on top of them are one storage pool -
+    # all but the SSD caches, which can serve volumes of several pools and
+    # belong to none of them.
+    live = [a for a in arrays if not a.system and a.state != "inactive"]
     tops = {a.name: [t for t in sysfs.tops(a.name)
-                     if "reserved" not in sysfs.name(t)] for a in data}
+                     if "reserved" not in sysfs.name(t)] for a in live}
+    caches = {a.name for a in live if _is_cache(a.name, tops[a.name], sysfs)}
     pools: list[dict[str, Any]] = []
-    for array in sorted(data, key=lambda a: _natural(a.name)):
+    for array in sorted(live, key=lambda a: _natural(a.name)):
+        if array.name in caches:
+            continue
         joined = [p for p in pools if set(p["_tops"]) & set(tops[array.name])]
         pool = joined[0] if joined else {"_tops": [], "arrays": []}
         for other in joined[1:]:
@@ -428,39 +489,78 @@ def inspect(arrays: list[Array], sys_root: str = "/sys",
 
     mounts = _mounts(mountinfo_path) if paths else []
     on: dict[str, list[str]] = {}
+    mounted_as: dict[str, str] = {}
     for path in paths:
-        device = _mount_device(path, mounts, sysfs)
+        device, kind = _mount_device(path, mounts, sysfs)
         for top in sysfs.tops(device) if device else []:
             on.setdefault(top, []).append(path)
+            mounted_as.setdefault(top, kind)
 
     sizes = {a.name: a.size_bytes for a in arrays}
     out: list[dict[str, Any]] = []
     for pool in pools:
         pool["arrays"].sort(key=_natural)
         volumes = []
-        pool_name = ""
+        vg = None
         for top in pool["_tops"]:
             names = [sysfs.name(d) for d in sysfs.chain(top)]
-            # DSM names its volume groups vgN after Storage Pool N; DSM 6 named
-            # its SHR group vg1000, which is no pool number. Elsewhere vg0 is
-            # just a volume group, and the pool keeps its default name.
-            pool_name = pool_name or next(
-                (f"Storage Pool {m['n']}" for m in map(_POOL.match, names)
-                 if synology and m and m["n"] != "1000"), "")
+            # DSM names its volume groups vgN; DSM 6 named its SHR group
+            # vg1000, which is no pool number.
+            vg = vg or next((int(m["n"]) for m in map(_POOL.match, names)
+                             if m and m["n"] != "1000"), None)
+            number = _volume_number(names)
+            cached = sorted((c for c in caches if top in tops[c]), key=_natural)
             volumes.append({
-                "name": _volume_label(names, sysfs.name(top)),
+                "name": f"Volume {number}" if number is not None else sysfs.name(top),
+                "number": number,
                 "device": sysfs.name(top),
                 "size_bytes": sysfs.size(top),
                 "paths": on.get(top, []),
+                "filesystem": sysfs.filesystem(top) or mounted_as.get(top, ""),
+                "cache": cached,
             })
-        volumes.sort(key=lambda v: _natural(v["name"]))
+        many = len(pool["arrays"]) > 1
         out.append({
-            "pool": pool_name,
+            "pool": "",
+            "_vg": vg,
+            # Several arrays joined into one: on a Synology the layers of SHR.
+            "layout": ("shr" if synology else "lvm") if many else "single",
             "arrays": pool["arrays"],
+            "caches": sorted({c for v in volumes for c in v["cache"]}, key=_natural),
             "size_bytes": sum(sizes.get(name, 0) for name in pool["arrays"]),
             "volumes": volumes,
         })
+
+    if synology:
+        _synology_names(out)
+    for pool in out:
+        del pool["_vg"]
+        for volume in pool["volumes"]:
+            del volume["number"]
+        pool["volumes"].sort(key=lambda v: _natural(v["name"]))
     return out
+
+
+def _synology_names(pools: list[dict[str, Any]]) -> None:
+    """Storage Pool N and Volume N, as Storage Manager has them.
+
+    DSM 7 names a pool's volume group vgN after Storage Pool N. A pool from
+    DSM 6 has vg1000, or no volume group at all, and a pool made beside it
+    then takes vg1 although it is Storage Pool 2 - so unless every pool has a
+    number of its own, they are counted in the order their arrays were made,
+    as DSM counted them. A volume with no volume_N in its name (DSM 6's
+    vg1000-lv) is the lowest Volume number none of the others has."""
+    numbers = [p["_vg"] for p in pools]
+    own = None not in numbers and len(set(numbers)) == len(numbers)
+    for index, pool in enumerate(pools, start=1):
+        pool["pool"] = f"Storage Pool {pool['_vg'] if own else index}"
+    taken = {v["number"] for p in pools for v in p["volumes"] if v["number"] is not None}
+    for volume in (v for p in pools for v in p["volumes"]):
+        if volume["number"] is None and (volume["filesystem"] or volume["paths"]
+                                         or volume["device"].startswith("cachedev")):
+            volume["number"] = next(n for n in range(1, len(taken) + 2) if n not in taken)
+            taken.add(volume["number"])
+            volume["name"] = f"Volume {volume['number']}"
 
 
 def warnings(array: Array) -> list[tuple[str, str]]:

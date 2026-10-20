@@ -17,7 +17,16 @@ What is read, per drive:
   so only a count that grows is reported;
 - for NVMe: the controller's critical warning, media errors, wear (percentage
   used) and spare capacity left;
-- temperature and power-on time, for the page.
+- temperature and power-on time, for the page;
+- and, for the drive's own page, what it has been through: data written and
+  read over its life, an SSD's wear, the head parks of a hard disk, its
+  link speed, the errors it logged itself and failed self-tests.
+
+How much a SATA drive has written is a vendor attribute, in a unit its name
+gives (Total_LBAs_Written in sectors, Host_Writes_32MiB, Host_Writes_GiB),
+and an SSD's wear is the normalised value of another (Wear_Leveling_Count on
+a Samsung, Percent_Lifetime_Remain on a Crucial): 100 new, counting down.
+NVMe reports both the same way on every drive.
 
 Drives asleep are not woken: the exporter asks smartctl to skip a drive in
 standby, and it shows as asleep until it next spins up.
@@ -36,6 +45,21 @@ _SECTOR_COUNTERS = {
     "Reported_Uncorrect": "reported uncorrectable",
 }
 _CRC = "UDMA_CRC_Error_Count"
+# Lifetime data, by attribute name: (written or read, bytes per unit). None is
+# the drive's logical sector.
+_GIB, _MIB = 1024 ** 3, 1024 ** 2
+_DATA = {
+    "Total_LBAs_Written": ("written", None), "Total_LBAs_Read": ("read", None),
+    "Host_Writes_32MiB": ("written", 32 * _MIB), "Host_Reads_32MiB": ("read", 32 * _MIB),
+    "Host_Writes_GiB": ("written", _GIB), "Host_Reads_GiB": ("read", _GIB),
+    "Total_Writes_GiB": ("written", _GIB), "Total_Reads_GiB": ("read", _GIB),
+    "Lifetime_Writes_GiB": ("written", _GIB), "Lifetime_Reads_GiB": ("read", _GIB),
+    "Host_Writes_MiB": ("written", _MIB), "Host_Reads_MiB": ("read", _MIB),
+}
+# An SSD's life left, as the attribute's normalised value: 100 when new.
+_LIFE_LEFT = ("Wear_Leveling_Count", "Media_Wearout_Indicator", "Percent_Lifetime_Remain",
+              "SSD_Life_Left", "Remaining_Lifetime_Perc")
+_LOAD_CYCLES = "Load_Cycle_Count"
 _BAY = re.compile(r"^(?:sata|sas)(?P<n>\d+)$")
 _SAMPLE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+(\S+)')
 _LABEL = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
@@ -76,6 +100,9 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
             "family": "", "protocol": "", "passed": None, "exit_status": None,
             "temperature": None, "power_on_hours": None, "power_cycles": None,
             "counters": {}, "crc_errors": None, "nvme": {},
+            "rotation_rpm": None, "link_bps": None, "bytes_written": None, "bytes_read": None,
+            "wear_pct": None, "load_cycles": None, "error_log": None, "self_test_errors": None,
+            "_data": {}, "_life": {}, "_sector": 512, "_metric": {},
         })
 
     for name, labels, value in samples:
@@ -106,6 +133,25 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
                 d["counters"][attribute] = int(value)
             elif attribute == _CRC:
                 d["crc_errors"] = int(value)
+            elif attribute in _DATA:
+                d["_data"][attribute] = value
+            elif attribute == _LOAD_CYCLES:
+                d["load_cycles"] = int(value)
+        elif name == "smartctl_device_attribute" and labels.get("attribute_value_type") == "value":
+            if labels.get("attribute_name") in _LIFE_LEFT:
+                d["_life"][labels["attribute_name"]] = value
+        elif name == "smartctl_device_rotation_rate":
+            d["rotation_rpm"] = int(value)
+        elif name == "smartctl_device_interface_speed" and labels.get("speed_type") == "current":
+            d["link_bps"] = value or None
+        elif name == "smartctl_device_block_size" and labels.get("blocks_type") == "logical":
+            d["_sector"] = int(value) or 512
+        elif name in ("smartctl_device_bytes_written", "smartctl_device_bytes_read"):
+            d["_metric"][name.removeprefix("smartctl_device_bytes_")] = value
+        elif name in ("smartctl_device_error_log_count", "smartctl_device_num_err_log_entries"):
+            d["error_log"] = max(d["error_log"] or 0, int(value))
+        elif name == "smartctl_device_self_test_log_error_count":
+            d["self_test_errors"] = max(d["self_test_errors"] or 0, int(value))
         elif name in ("smartctl_device_critical_warning", "smartctl_device_media_errors",
                       "smartctl_device_percentage_used", "smartctl_device_available_spare",
                       "smartctl_device_available_spare_threshold"):
@@ -115,9 +161,29 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
         # open the device or read its identity" - which is also how a drive
         # in standby answers when smartctl is told not to wake it.
         d["asleep"] = d["passed"] is None and bool((d["exit_status"] or 0) & 2)
+        _lifetime(d)
     # The bays in order, as DSM numbers them, then everything else.
     return sorted(by_device.values(),
                   key=lambda d: (not _BAY.match(d["device"]), _natural(d["device"])))
+
+
+def _lifetime(d: dict[str, Any]) -> None:
+    """Data written and read, and wear, from whichever way the drive says it."""
+    data, life, sector, metric = d.pop("_data"), d.pop("_life"), d.pop("_sector"), d.pop("_metric")
+    for attribute, raw in data.items():
+        way, unit = _DATA[attribute]
+        d[f"bytes_{way}"] = int(raw * (unit or sector))
+    for way in ("written", "read"):
+        # The exporter's own figure is NVMe's and SCSI's; a SATA drive has 0
+        # there, which is no reading.
+        if d[f"bytes_{way}"] is None and metric.get(way):
+            d[f"bytes_{way}"] = int(metric[way])
+    if "percentage_used" in d["nvme"]:
+        d["wear_pct"] = d["nvme"]["percentage_used"]
+    else:
+        left = next((life[a] for a in _LIFE_LEFT if a in life), None)
+        if left is not None:
+            d["wear_pct"] = max(0.0, min(100.0, 100.0 - left))
 
 
 def _known(value: str | None) -> str:
@@ -162,7 +228,7 @@ def assess(drive: dict[str, Any], *, crc_before: int | None, temp_limit: float,
     spare, threshold = nvme.get("available_spare"), nvme.get("available_spare_threshold")
     if spare is not None and threshold and spare <= threshold:
         flag("critical", f"spare capacity down to {spare:.0f}% (threshold {threshold:.0f}%)")
-    used = nvme.get("percentage_used")
+    used = nvme["percentage_used"] if "percentage_used" in nvme else drive.get("wear_pct")
     if used is not None and used >= wear_limit:
         flag("warning", f"{used:.0f}% of its rated write endurance used")
     temperature = drive.get("temperature")
