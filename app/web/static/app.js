@@ -1586,34 +1586,18 @@ function driveList(drives) {
   return `Drive${nums.length === 1 ? "" : "s"} ${text}`;
 }
 
-// Why a layer has fewer drives than its pool: SHR only stripes a layer
-// across the drives with room left for it.
-function layerNote(a, pool, byName) {
-  if (!pool || pool.arrays.length < 2) return "";
-  const mine = new Set((a.drives || []).map((d) => d.disk));
-  const all = new Map();
-  for (const name of pool.arrays) {
-    for (const d of (byName.get(name)?.drives || [])) all.set(d.disk, d);
-  }
-  const missing = [...all.values()].filter((d) => !mine.has(d.disk));
-  if (!missing.length || !mine.size) return "";
-  const smallest = Math.min(...(a.drives || []).map((d) => d.size_bytes || Infinity));
-  const smaller = missing.every((d) => d.size_bytes && d.size_bytes < smallest);
-  return `${driveList(missing)} ${missing.length === 1 ? "is" : "are"} not in this layer${
-    smaller ? `: at ${missing.map((d) => bytes(d.size_bytes)).join(", ")} ${
-      missing.length === 1 ? "it is" : "they are"} used up by the layers below` : ""}.`;
-}
-
-function arrayRow(a, { pool = null, byName = new Map() } = {}) {
+function arrayRow(a, { pool = null } = {}) {
   const [label, levelName] = arrayState(a);
-  const role = ARRAY_ROLES[a.name] && a.system ? ` · ${ARRAY_ROLES[a.name]}` : "";
+  const cached = cacheFor(a);
+  const role = ARRAY_ROLES[a.name] && a.system ? ` · ${ARRAY_ROLES[a.name]}`
+    : cached ? ` · SSD cache${cached.length ? ` for ${cached.join(", ")}` : ""}` : "";
   const disks = a.system ? `${a.active} disk${a.active === 1 ? "" : "s"}` : `${a.active} of ${a.slots} disks`;
   const size = a.size_bytes && !a.system ? ` · ${bytes(a.size_bytes)}` : "";
-  const layer = pool && pool.arrays.length > 1
+  const layer = pool && pool.arrays.length > 1 && !cached
     ? ` · layer ${pool.arrays.indexOf(a.name) + 1} of ${pool.arrays.length}` : "";
   // Striped and moving like the layer on the drive tiles, in that layer's colour.
   const busy = BUSY_OPERATIONS.has(a.operation) ? " is-busy" : "";
-  const tint = pool ? ` data-layer="${layerIndex(a) % 4}"` : "";
+  const tint = pool ? ` data-layer="${layerAttr(a)}"` : "";
   const progress = a.progress !== null && a.progress !== undefined ? `
     <div class="meter" role="img" aria-label="${esc(a.operation)} ${a.progress}% done">
       <div class="meter-fill${busy}"${tint} style="width:${Math.min(100, a.progress)}%"></div></div>
@@ -1624,8 +1608,6 @@ function arrayRow(a, { pool = null, byName = new Map() } = {}) {
     const sizes = [...new Set(a.drives.map((d) => d.size_bytes).filter(Boolean))];
     details.push(`${driveList(a.drives)}${sizes.length === 1 ? ` · ${bytes(sizes[0])} each` : ""}`);
   }
-  const why = layerNote(a, pool, byName);
-  if (why) details.push(why);
   if (!a.system && a.last_sync === "check" && a.mismatches === 0 && !a.operation) {
     details.push("last scrub: no mismatches");
   }
@@ -1647,22 +1629,56 @@ function arrayRow(a, { pool = null, byName = new Map() } = {}) {
     </div>`;
 }
 
+const FILESYSTEMS = { btrfs: "Btrfs", ext4: "ext4", ext3: "ext3", xfs: "XFS", f2fs: "F2FS" };
+
+// How the pool is built, said once above its drives: SHR's layers need it,
+// a single RAID or an SSD cache is plain from the rows below.
+function poolHow(pool) {
+  const n = pool.arrays.length;
+  if (pool.layout === "shr") {
+    return `Built from ${n} arrays: SHR splits drives of different sizes into layers, makes each
+      layer its own RAID, and joins them into one pool. Each layer survives a failed drive on its own.`;
+  }
+  if (pool.layout === "lvm") {
+    return `Built from ${n} arrays, joined end to end by LVM. Each array keeps its own redundancy.`;
+  }
+  return "";
+}
+
+function volumeBits(v) {
+  return [
+    ...(v.paths || []).map((p) => `<code>${esc(p)}</code>`),
+    ...(v.filesystem ? [esc(FILESYSTEMS[v.filesystem] || v.filesystem)] : []),
+    ...(v.size_bytes ? [bytes(v.size_bytes)] : []),
+    ...((v.cache || []).length ? [`SSD cache <code>${esc(v.cache.join(", "))}</code>`] : []),
+  ];
+}
+
 function poolHead(pool) {
   const volumes = pool.volumes || [];
-  const name = volumes.map((v) => v.name).join(", ") || pool.pool || pool.arrays.join(" + ");
-  const paths = volumes.flatMap((v) => v.paths || []);
-  const size = volumes.length === 1 && volumes[0].size_bytes ? volumes[0].size_bytes : pool.size_bytes;
+  const how = poolHow(pool);
+  const head = (name, bits) => `<div class="pool-head"><strong>${esc(name)}</strong>${
+    bits.length ? `<span>${bits.join(" · ")}</span>` : ""}</div>`;
+  const tail = how ? `<p class="array-detail muted">${how}</p>` : "";
+  // A pool without a name of its own (not a Synology) is named by its volume.
+  if (!pool.pool && volumes.length <= 1) {
+    const [v] = volumes;
+    return head(v ? v.name : pool.arrays.join(" + "),
+      v ? volumeBits(v) : pool.size_bytes ? [bytes(pool.size_bytes)] : []) + tail;
+  }
+  const allocated = volumes.reduce((sum, v) => sum + (v.size_bytes || 0), 0);
+  // A pool can hold less in volumes than it has: a volume made smaller than its pool.
+  const spare = pool.size_bytes && allocated ? pool.size_bytes - allocated : 0;
   const figures = [
-    ...(pool.pool && volumes.length ? [pool.pool] : []),
-    ...paths.map((p) => `<code>${esc(p)}</code>`),
-    ...(size ? [bytes(size)] : []),
+    ...(pool.size_bytes ? [bytes(pool.size_bytes)] : []),
+    ...(spare > pool.size_bytes * 0.02 ? [`${bytes(spare)} not in a volume`] : []),
   ];
-  const how = pool.arrays.length > 1
-    ? `<p class="array-detail muted">One volume on ${pool.arrays.length} arrays: SHR splits
-       drives of different sizes into layers, makes each layer its own RAID, and joins them
-       into one pool. Each layer survives a failed drive on its own.</p>` : "";
-  return `<div class="pool-head"><strong>${esc(name)}</strong>${
-    figures.length ? `<span>${figures.join(" · ")}</span>` : ""}</div>${how}`;
+  const rows = volumes.map((v) => {
+    const bits = volumeBits(v);
+    return `<p class="pool-volume"><strong>${esc(v.name)}</strong>${
+      bits.length ? `<span>${bits.join(" · ")}</span>` : ""}</p>`;
+  }).join("");
+  return head(pool.pool || pool.arrays.join(" + "), figures) + rows + tail;
 }
 
 // --- drive bays ------------------------------------------------------------------
@@ -1736,6 +1752,18 @@ function layerIndex(a) {
   return pool ? Math.max(0, pool.arrays.indexOf(a.name)) : 0;
 }
 
+// The volumes an SSD cache array serves, or null when it is no cache.
+function cacheFor(a) {
+  const pools = (state.snapshot.raid || {}).pools || [];
+  if (!pools.some((p) => (p.caches || []).includes(a.name))) return null;
+  return pools.flatMap((p) => (p.volumes || []).filter((v) => (v.cache || []).includes(a.name)).map((v) => v.name));
+}
+
+// A cache has a colour of its own: it holds none of the pool's data.
+function layerAttr(a) {
+  return cacheFor(a) ? "cache" : String(layerIndex(a) % 4);
+}
+
 const BUSY_OPERATIONS = new Set(["recovery", "reshape", "resync", "check", "repair"]);
 
 // The layers stacked on one drive, bottom up, and what is left unused.
@@ -1758,7 +1786,7 @@ function bayTile(entry, biggest, density) {
   const height = biggest ? Math.max(30, (size / biggest) * 100) : 100;
   const segments = parts.map(({ m, pct }) => `<span class="bay-seg${
     BUSY_OPERATIONS.has(m.array.operation) ? " is-busy" : ""}${m.failed ? " is-failed" : ""}" data-layer="${
-    layerIndex(m.array) % 4}" style="flex-basis:${pct.toFixed(2)}%"></span>`).join("");
+    layerAttr(m.array)}" style="flex-basis:${pct.toFixed(2)}%"></span>`).join("");
   const sizeText = size ? (density === "dense" ? shortBytes(size) : bytes(size)) : "—";
   const aria = [entry.label, size ? bytes(size) : "", label, temp ? `${temp}C` : ""].filter(Boolean).join(", ");
   return `<button type="button" class="bay" data-level="${levelName}" data-drive="${esc(entry.key)}"
@@ -1777,10 +1805,12 @@ function bayLegend(arrays, anyFree) {
   if (!data.length) return "";
   // "Layer 1 md2", bottom layer first, as the tiles stack them; a layer that
   // is busy says so, striped like its segments.
-  const items = [...data].sort((x, y) => layerIndex(x) - layerIndex(y)).map((a) => {
+  const layers = data.filter((a) => !cacheFor(a)).length;
+  const items = [...data].sort((x, y) => !!cacheFor(x) - !!cacheFor(y) || layerIndex(x) - layerIndex(y)).map((a) => {
     const busy = BUSY_OPERATIONS.has(a.operation);
-    return `<span><i class="bay-swatch${busy ? " is-busy" : ""}" data-layer="${layerIndex(a) % 4}"></i>${
-      data.length > 1 ? `<span class="bay-layer">Layer ${layerIndex(a) + 1}</span>` : ""}<code>${esc(a.name)}</code>${
+    const what = cacheFor(a) ? "SSD cache" : layers > 1 ? `Layer ${layerIndex(a) + 1}` : "";
+    return `<span><i class="bay-swatch${busy ? " is-busy" : ""}" data-layer="${layerAttr(a)}"></i>${
+      what ? `<span class="bay-layer">${what}</span>` : ""}<code>${esc(a.name)}</code>${
       busy ? `<span class="bay-op">${esc(a.operation)}</span>` : ""}</span>`;
   });
   if (anyFree) items.push(`<span><i class="bay-swatch bay-free"></i>unused</span>`);
@@ -1809,10 +1839,12 @@ function renderArrays() {
   }
   const byName = new Map(arrays.map((a) => [a.name, a]));
   const pools = (report.pools || []).filter((p) => p.arrays.some((n) => byName.has(n)));
-  const pooled = new Set(pools.flatMap((p) => p.arrays));
+  // A pool's own arrays, then the SSD caches in front of its volumes.
+  const members = (pool) => [...pool.arrays, ...(pool.caches || [])].filter((n) => byName.has(n));
+  const pooled = new Set(pools.flatMap(members));
   // Read errors are a drive's, said once however many layers it is in.
   const warned = (report.drives || []).filter((d) => d.summary);
-  const inPool = (pool) => warned.filter((d) => pool.arrays.some((n) =>
+  const inPool = (pool) => warned.filter((d) => members(pool).some((n) =>
     (byName.get(n)?.drives || []).some((m) => m.disk === d.disk)));
   const shown = new Set(pools.flatMap((p) => inPool(p).map((d) => d.disk)));
   const driveNotes = (list) => list.map((d) =>
@@ -1823,9 +1855,8 @@ function renderArrays() {
   host.innerHTML = `<h3 class="sub-head">Disk arrays</h3>` +
     driveNotes(warned.filter((d) => !shown.has(d.disk))) +
     pools.map((pool) => `<div class="pool">${poolHead(pool)}${driveNotes(inPool(pool))}${
-      driveBays(pool.arrays.filter((n) => byName.has(n)).map((n) => byName.get(n)))}${pool.arrays
-      .filter((n) => byName.has(n))
-      .map((n) => arrayRow(byName.get(n), { pool, byName })).join("")}</div>`).join("") +
+      driveBays(members(pool).map((n) => byName.get(n)))}${members(pool)
+      .map((n) => arrayRow(byName.get(n), { pool })).join("")}</div>`).join("") +
     rest.map((a) => arrayRow(a)).join("");
   if ($("drive").open) renderDrive();
 }
@@ -1910,6 +1941,7 @@ function renderDrive() {
   const warned = errorWarning(entry);
   const { size, parts, free } = driveSegments(entry);
   const value = (v) => (v === null || v === undefined || v === "" ? null : v);
+  const count = (v) => (v === null || v === undefined ? null : Number(v).toLocaleString());
   const facts = [
     ["Size", size ? bytes(size) : null],
     ["Model", value(smart?.model) || value(entry.model)],
@@ -1922,18 +1954,20 @@ function renderDrive() {
     ["Temperature", smart?.temperature !== null && smart?.temperature !== undefined ? `${Math.round(smart.temperature)} °C` : null],
     ["Powered on", smart?.power_on_hours !== null && smart?.power_on_hours !== undefined
       ? `${powerOn(smart.power_on_hours)} (${Number(smart.power_on_hours).toLocaleString()} h)` : null],
-    ["Power cycles", smart?.power_cycles !== null && smart?.power_cycles !== undefined ? Number(smart.power_cycles).toLocaleString() : null],
-    ["Counters", smart ? driveCounters(smart) : null],
+    ["Power cycles", count(smart?.power_cycles)],
+    ...(smart ? driveLifetime(smart) : []),
   ].filter(([, v]) => v !== null && v !== undefined);
   const bar = parts.length ? `<div class="drive-bar" role="img" aria-label="${esc(parts.map(({ m, used }) =>
       `${m.array.name} uses about ${bytes(used)}`).join(", "))}${free > 2 ? `, ${free.toFixed(0)}% unused` : ""}">${
     parts.map(({ m, pct }) => `<span class="bay-seg${BUSY_OPERATIONS.has(m.array.operation) ? " is-busy" : ""}" data-layer="${
-      layerIndex(m.array) % 4}" style="flex-basis:${pct.toFixed(2)}%"></span>`).join("")}${
+      layerAttr(m.array)}" style="flex-basis:${pct.toFixed(2)}%"></span>`).join("")}${
     free > 2 ? `<span class="bay-seg bay-free" style="flex-basis:${free.toFixed(2)}%"></span>` : ""}</div>` : "";
   const arrays = entry.members.map((m) => {
     const a = m.array;
     const [aLabel, aLevel] = arrayState(a);
-    const role = a.system ? ARRAY_ROLES[a.name] || "system" : "";
+    const cached = cacheFor(a);
+    const role = a.system ? ARRAY_ROLES[a.name] || "system"
+      : cached ? `SSD cache${cached.length ? ` for ${cached.join(", ")}` : ""}` : "";
     const bits = [
       a.level || "md",
       role,
@@ -1941,7 +1975,7 @@ function renderDrive() {
       m.errors === null || m.errors === undefined ? "" : `${m.errors} read error${m.errors === 1 ? "" : "s"} corrected`,
       m.failed ? "failed out" : m.spare ? "spare" : "",
     ].filter(Boolean);
-    return `<li>${a.system ? "" : `<i class="bay-swatch" data-layer="${layerIndex(a) % 4}"></i>`}<code>${esc(a.name)}</code>
+    return `<li>${a.system ? "" : `<i class="bay-swatch" data-layer="${layerAttr(a)}"></i>`}<code>${esc(a.name)}</code>
       <span class="muted">${esc(bits.join(" · "))}</span>${statusPill(aLabel, aLevel)}</li>`;
   }).join("");
   const anyErrors = entry.members.some((m) => m.errors !== null && m.errors !== undefined);
@@ -2038,6 +2072,34 @@ function drivePill(d) {
   if (d.severity === "warning") return statusPill("warning", "warning");
   if (d.passed === null || d.passed === undefined) return statusPill("no data", "neutral");
   return statusPill("healthy", "good");
+}
+
+// Everything else SMART says about a drive, for its own page: what it has
+// written and read, its wear, and each counter on its own - a 0 is worth
+// reading there too.
+function driveLifetime(d) {
+  const count = (v) => (v === null || v === undefined ? null : Number(v).toLocaleString());
+  const nvme = d.nvme || {};
+  const c = d.counters || {};
+  const kind = d.protocol === "NVMe" ? null
+    : d.rotation_rpm === 0 ? "SSD" : d.rotation_rpm ? `${Number(d.rotation_rpm).toLocaleString()} rpm` : null;
+  return [
+    ["Type", kind],
+    ["Link", d.link_bps ? `${(d.link_bps / 1e9).toFixed(1)} Gb/s` : null],
+    ["Written", d.bytes_written !== null && d.bytes_written !== undefined ? bytes(d.bytes_written) : null],
+    ["Read", d.bytes_read !== null && d.bytes_read !== undefined ? bytes(d.bytes_read) : null],
+    ["Life used", d.wear_pct !== null && d.wear_pct !== undefined ? `${Math.round(d.wear_pct)}%` : null],
+    ["Spare left", nvme.available_spare !== undefined ? `${Math.round(nvme.available_spare)}%` : null],
+    ["Media errors", count(nvme.media_errors)],
+    ["Reallocated sectors", count(c.Reallocated_Sector_Ct)],
+    ["Pending sectors", count(c.Current_Pending_Sector)],
+    ["Uncorrectable sectors", count(c.Offline_Uncorrectable)],
+    ["Reported uncorrectable", count(c.Reported_Uncorrect)],
+    ["CRC errors", count(d.crc_errors)],
+    ["Head parks", d.rotation_rpm ? count(d.load_cycles) : null],
+    ["Errors logged", count(d.error_log)],
+    ["Failed self-tests", count(d.self_test_errors)],
+  ];
 }
 
 function driveCounters(d) {
