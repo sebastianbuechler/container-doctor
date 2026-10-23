@@ -1,5 +1,5 @@
 # Container Doctor runtime dependencies (pinned; Dependabot keeps them fresh)
-anthropic==1.14.0
+anthropic==1.15.0
 docker==7.2.0
 fastapi==0.143.1
 uvicorn[standard]==0.54.0
