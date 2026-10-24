@@ -1538,6 +1538,7 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 .array-row .muted { font-size: 12px; }
 .array-none { margin: 0; font-size: 12.5px; }
 .array-detail { margin: 0; font-size: 12px; }
+.array-detail p { margin: 0; }
 .pool { display: grid; gap: 10px; padding-left: 12px; border-left: 2px solid var(--hairline); }
 .pool-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; }
 .pool-head span { color: var(--ink-2); }
@@ -3014,6 +3015,9 @@ body[data-offline] main { opacity: 0.55; filter: saturate(0.4); transition: opac
 .host-charts { padding: 16px; display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px 24px; }
 .host-chart { display: grid; gap: 6px; min-width: 0; }
 .host-reboots:empty { display: none; }
+.array-snippet { margin: 6px 0 0; padding: 8px 10px; background: var(--surface-sunken);
+  border-radius: var(--radius-sm); font-family: var(--mono); font-size: 12px; color: var(--ink-2);
+  overflow-x: auto; white-space: pre; }
 .host-reboots { padding: 0 16px 16px; display: grid; gap: 6px; }
 .host-reboot-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; font-size: 13px; color: var(--ink-2); }
 .host-reboot-list li { display: flex; gap: 10px; }
