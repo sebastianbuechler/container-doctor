@@ -6,6 +6,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A Traefik started with `--providers.docker.network` (or
+  `TRAEFIK_PROVIDERS_DOCKER_NETWORK`) now counts as `traefik.docker.network`
+  for every container without the label: routed containers on several
+  networks are no longer called ambiguous, and are warned about when they are
+  not on that network.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
