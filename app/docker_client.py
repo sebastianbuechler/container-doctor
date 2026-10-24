@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import shutil
 import threading
 from datetime import datetime
@@ -326,6 +327,7 @@ def disk_usage(paths: Iterable[str]) -> list[dict[str, Any]]:
     for path in paths:
         try:
             usage = shutil.disk_usage(path)
+            fsid = os.statvfs(path).f_fsid
         except OSError as exc:
             log.debug("disk usage failed for %s: %s", path, exc)
             continue
@@ -340,6 +342,10 @@ def disk_usage(paths: Iterable[str]) -> list[dict[str, Any]]:
                 "used_bytes": usage.used,
                 "free_bytes": usage.free,
                 "used_pct": round(used_pct, 1),
+                # Which filesystem answered: the path stays the same when its
+                # mount is moved to another volume, and the history must not
+                # run on across that as if one disk had emptied. 0 is "no idea".
+                "fs_id": f"{fsid:x}" if fsid else None,
             }
         )
     return out
