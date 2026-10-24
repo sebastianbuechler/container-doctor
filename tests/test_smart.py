@@ -305,6 +305,17 @@ class Sleep(SidecarCase):
         # Not its temperature: asleep, it has none.
         self.assertEqual(len(sup.store.drive_temp_history("WD-WX12345", self.since())), 1)
 
+    def test_counters_are_kept_from_drives_awake_only(self):
+        sup = self.supervisor()
+        self.read(sup)
+        [row] = sup.store.drive_counter_history("WD-WX67890", self.since())
+        self.assertEqual((row["counters"]["reallocated"], row["counters"]["pending"]), (24, 8))
+        self.asleep()
+        self.read(sup)
+        # The hour's reading is still the one taken awake.
+        [row] = sup.store.drive_counter_history("WD-WX12345", self.since())
+        self.assertEqual(row["counters"]["reallocated"], 0)
+
     def test_who_a_drive_is_survives_a_restart(self):
         sup = self.supervisor()
         self.read(sup)

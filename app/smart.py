@@ -175,6 +175,29 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
                   key=lambda d: (not _BAY.match(d["device"]), _natural(d["device"])))
 
 
+# The counters worth a history, by key, and how each is said.
+COUNTER_WORDS = {
+    "reallocated": "Reallocated sectors", "pending": "Pending sectors",
+    "uncorrectable": "Uncorrectable sectors", "reported_uncorrect": "Reported uncorrectable",
+    "crc_errors": "CRC errors", "media_errors": "Media errors", "spin_ups": "Spin-ups",
+}
+_COUNTER_SOURCES = {
+    "reallocated": "Reallocated_Sector_Ct", "pending": "Current_Pending_Sector",
+    "uncorrectable": "Offline_Uncorrectable", "reported_uncorrect": "Reported_Uncorrect",
+}
+
+
+def counters(d: dict[str, Any]) -> dict[str, int]:
+    """The counters this drive reports, by COUNTER_WORDS key."""
+    out = {key: int(d["counters"][name]) for key, name in _COUNTER_SOURCES.items()
+           if d["counters"].get(name) is not None}
+    for key, value in (("crc_errors", d.get("crc_errors")), ("spin_ups", d.get("spin_ups")),
+                       ("media_errors", (d.get("nvme") or {}).get("media_errors"))):
+        if value is not None:
+            out[key] = int(value)
+    return out
+
+
 def can_sleep(d: dict[str, Any]) -> bool:
     """A spinning disk: SSDs (rotation 0) and NVMe have nothing to spin down."""
     return d["asleep"] or (d.get("rotation_rpm") or 0) > 0

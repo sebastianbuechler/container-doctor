@@ -32,3 +32,15 @@ Docker already mounts read-only.
 `DOCTOR_PROC_PATH=off` turns the page and its rules off.
 
 <Screenshot name="host" alt="The Host page: CPU, memory, load, disks and temperatures, with a day of history." />
+
+## Who used the CPU
+
+Below the charts, **CPU by container** names the five containers that used the
+most CPU over the chosen range: each one's average share of the host, its
+busiest hour and its peak. Each container's CPU is kept per hour, as with its
+memory, so a busy night is still there to look at the next morning - the
+container's own page has the same history for 14 days. A disk's activity over
+time is on its drive's page; see
+[Reads and writes](/container-doctor/guides/storage/#reads-and-writes).
+
+<Screenshot name="host-cpu" alt="CPU by container on the Host page: Jellyfin busiest in the evening, Paperless's database at 2 a.m." />

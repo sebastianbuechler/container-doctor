@@ -79,6 +79,27 @@ def host(store: Store, at: type[_Clock]) -> None:
             temps[SERIALS["sdb"]] = 35 + 4 * busy + rng.uniform(-0.5, 0.5)
         store.record_drive_temps(temps, bucket_minutes=5)
         store.record_drive_sleep({SERIALS["sda"]: asleep, SERIALS["sdb"]: asleep}, bucket_minutes=5)
+        # Reads and writes: none asleep, the backup reading the mirror at 3,
+        # streams in the evening, and the SSD always busy with the databases.
+        backup = t.hour == 3 and t.minute < 30
+        disk = 0 if asleep else (80e6 if backup else (0.4e6 + 2.5e6 * busy) * rng.uniform(0.3, 1.4))
+        store.record_drive_io({
+            SERIALS["sda"]: {"read_bps": disk, "write_bps": disk * 0.08, "busy_pct": min(95, disk / 1.2e6)},
+            SERIALS["sdb"]: {"read_bps": disk * 0.9, "write_bps": disk * 0.08, "busy_pct": min(95, disk / 1.3e6)},
+            SERIALS["nvme0n1"]: {"read_bps": 2e6 + 9e6 * busy, "write_bps": 3e6 + 4e6 * busy,
+                                 "busy_pct": 2 + 6 * busy},
+        }, bucket_minutes=5)
+        if t.minute < 5:  # once an hour
+            days_back = (STARTED - t).total_seconds() / 86400
+            wakes = int((7 - days_back) * 3)
+            store.record_drive_counters({
+                SERIALS["sda"]: {"reallocated": 0, "pending": 0, "uncorrectable": 0,
+                                 "crc_errors": 0, "spin_ups": 3412 - 21 + wakes},
+                # Drive 2 remapped another eight sectors four days ago.
+                SERIALS["sdb"]: {"reallocated": 16 if days_back > 4 else 24, "pending": 0,
+                                 "uncorrectable": 0, "crc_errors": 3, "spin_ups": 3398 - 21 + wakes},
+                SERIALS["nvme0n1"]: {"media_errors": 0},
+            })
         t += step
 
 
@@ -114,6 +135,18 @@ def memory(store: Store, at: type[_Clock]) -> None:
                 level = min(level, box.mem_limit - MIB)
             samples.append((box.name, int(level)))
         store.record_mem_samples(samples)
+        # CPU as a share of the whole host; the nightly jobs show up at night.
+        cpu = []
+        for box in BOXES:
+            if box.state != "running":
+                continue
+            load = box.cpu * (0.5 + busy) * rng.uniform(0.7, 1.3)
+            if box.name == "jellyfin" and 19 <= t.hour <= 22:
+                load += 140   # evening transcodes
+            if box.name == "paperless-db" and t.hour == 2:
+                load += 90    # the nightly index rebuild
+            cpu.append((box.name, round(load / world.CORES, 2)))
+        store.record_cpu_samples(cpu)
         t += timedelta(hours=1)
 
 

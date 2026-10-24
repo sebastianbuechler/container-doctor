@@ -148,6 +148,32 @@ so a sleeping drive keeps its name and model on the Storage page and its history
 stays filed under its serial. SSDs and NVMe drives never spin down and have no
 sleep section.
 
+### Reads and writes
+
+Each drive's page charts its reads and writes over the same range, with how
+much it read and wrote in total and when it was busiest. They come from the
+kernel's own counters (`/proc/diskstats`), so this works without the SMART
+sidecar too. Beside the sleep bar it shows what the bar cannot: a disk that
+wakes at 3:00 every night and reads for half an hour is a backup or a scan,
+not a stray process. The Host page shows the same counters live; this is
+their history, averaged per five minutes (`DOCTOR_HOST_SAMPLE_MINUTES`).
+
+<Screenshot name="drive-activity" alt="A hard disk's reads and writes over a day, with the nightly backup, and its SMART counters over the last week: steady, and spin-ups per day." />
+
+### Counters over time
+
+SMART counters only ever say where a drive stands: 24 reallocated sectors
+reads the same whether they were remapped three years ago or this morning. The
+doctor keeps one reading an hour of each drive's counters - reallocated,
+pending and uncorrectable sectors, CRC errors, an NVMe drive's media errors,
+and a hard disk's spin-ups - and the drive's page says, for the last 30 days,
+which stayed steady and which rose, how often, and when last. Pending sectors
+that went back to 0 were remapped or rewritten, and the rise is still shown.
+Spin-ups come with a rate: a disk spinning up dozens of times a day wears
+faster than one that stays up.
+
+The history is kept for `DOCTOR_RETENTION_DAYS`, like the rest.
+
 ## When a disk drops out of the array
 
 A degraded array is the failure on a storage host that loses data, and it is invisible

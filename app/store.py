@@ -150,6 +150,43 @@ CREATE TABLE IF NOT EXISTS drive_sleep (
     PRIMARY KEY (drive, bucket)
 );
 
+-- Each drive's reads and writes, from the kernel's own counters: the average
+-- rate per bucket and the share of time it was busy. With drive_sleep beside
+-- it, this is when something touched a disk. Keyed like drive_temps.
+CREATE TABLE IF NOT EXISTS drive_io (
+    drive     TEXT NOT NULL,
+    bucket    TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    polls     INTEGER NOT NULL,
+    read_bps  REAL NOT NULL,
+    write_bps REAL NOT NULL,
+    busy_pct  REAL NOT NULL,
+    PRIMARY KEY (drive, bucket)
+);
+
+-- Each drive's SMART counters - bad sectors, CRC errors, spin-ups - as last
+-- read in each hour, as JSON. A count that keeps rising is the news; the
+-- current value alone cannot say whether it is.
+CREATE TABLE IF NOT EXISTS drive_counters (
+    drive    TEXT NOT NULL,
+    bucket   TEXT NOT NULL,
+    at       TEXT NOT NULL,
+    counters TEXT NOT NULL,
+    PRIMARY KEY (drive, bucket)
+);
+
+-- CPU per container per hour, as a share of the whole host: the peak and the
+-- mean, like mem_samples. What kept the host busy last night is a question
+-- the minute-by-minute history has already forgotten.
+CREATE TABLE IF NOT EXISTS cpu_samples (
+    name    TEXT NOT NULL,
+    bucket  TEXT NOT NULL,
+    max_pct REAL NOT NULL,
+    sum_pct REAL NOT NULL,
+    n       INTEGER NOT NULL,
+    PRIMARY KEY (name, bucket)
+);
+
 -- The dashboard briefing, one row per section plus "overall", each with the
 -- fingerprint of the facts it was written from. Kept in SQLite so a restart
 -- does not pay to rewrite words that are still true.
@@ -1046,6 +1083,64 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def record_drive_io(self, rates: dict[str, dict[str, float]], *, bucket_minutes: int = 5) -> None:
+        """Fold each drive's rates into its bucket's running averages."""
+        if not rates:
+            return
+        now = datetime.now(timezone.utc)
+        bucket, at = _bucket(now, bucket_minutes), now.isoformat(timespec="seconds")
+        averaged = ", ".join(f"{k} = ({k} * polls + excluded.{k}) / (polls + 1)"
+                             for k in ("read_bps", "write_bps", "busy_pct"))
+        with self._lock:
+            self._conn.executemany(
+                f"""INSERT INTO drive_io (drive, bucket, at, polls, read_bps, write_bps, busy_pct)
+                    VALUES (?,?,?,1,?,?,?)
+                    ON CONFLICT(drive, bucket) DO UPDATE SET {averaged},
+                      polls = polls + 1, at = excluded.at""",
+                [(drive, bucket, at, float(r["read_bps"]), float(r["write_bps"]), float(r["busy_pct"]))
+                 for drive, r in rates.items()],
+            )
+            self._conn.commit()
+
+    def drive_io_history(self, drive: str, since: datetime) -> list[dict[str, Any]]:
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT bucket, read_bps, write_bps, busy_pct FROM drive_io "
+                "WHERE drive=? AND at >= ? ORDER BY bucket",
+                (drive, since.isoformat(timespec="seconds")),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    def record_drive_counters(self, counters: dict[str, dict[str, int]]) -> None:
+        """Keep the latest reading of each drive's counters in each hour."""
+        if not counters:
+            return
+        now = datetime.now(timezone.utc)
+        with self._lock:
+            self._conn.executemany(
+                """INSERT INTO drive_counters (drive, bucket, at, counters) VALUES (?,?,?,?)
+                   ON CONFLICT(drive, bucket) DO UPDATE SET
+                     at=excluded.at, counters=excluded.counters""",
+                [(drive, f"{now:%Y-%m-%dT%H}", now.isoformat(timespec="seconds"),
+                  json.dumps(values, sort_keys=True)) for drive, values in counters.items()],
+            )
+            self._conn.commit()
+
+    def drive_counter_history(self, drive: str, since: datetime) -> list[dict[str, Any]]:
+        """Each hour's reading, oldest first: `at` and the counters it had."""
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT at, counters FROM drive_counters WHERE drive=? AND at >= ? ORDER BY at",
+                (drive, since.isoformat(timespec="seconds")),
+            ).fetchall()
+        out = []
+        for row in rows:
+            try:
+                out.append({"at": row["at"], "counters": json.loads(row["counters"])})
+            except json.JSONDecodeError:
+                continue
+        return out
+
     def host_state(self, key: str) -> str | None:
         with self._read() as conn:
             row = conn.execute("SELECT value FROM host_state WHERE key=?", (key,)).fetchone()
@@ -1558,6 +1653,40 @@ class Store:
             )
             self._conn.commit()
 
+    def record_cpu_samples(self, samples: list[tuple[str, float]]) -> None:
+        """One reading per container into its hour: the peak and a running mean."""
+        if not samples:
+            return
+        bucket = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00:00+00:00")
+        with self._lock:
+            self._conn.executemany(
+                """INSERT INTO cpu_samples (name, bucket, max_pct, sum_pct, n)
+                   VALUES (?,?,?,?,1)
+                   ON CONFLICT(name, bucket) DO UPDATE SET
+                     max_pct = MAX(max_pct, excluded.max_pct),
+                     sum_pct = sum_pct + excluded.sum_pct,
+                     n = n + 1""",
+                [(name, bucket, float(pct), float(pct)) for name, pct in samples],
+            )
+            self._conn.commit()
+
+    def cpu_history(self, since: datetime, name: str | None = None) -> dict[str, list[dict[str, Any]]]:
+        """Every container's hourly CPU peaks and means since `since`, oldest first."""
+        clause, params = ("AND name = ?", [name]) if name else ("", [])
+        with self._read() as conn:
+            rows = conn.execute(
+                f"""SELECT name, bucket, max_pct, sum_pct, n FROM cpu_samples
+                    WHERE bucket >= ? {clause} ORDER BY name, bucket""",
+                (since.isoformat(timespec="seconds"), *params),
+            ).fetchall()
+        out: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            out.setdefault(row["name"], []).append({
+                "bucket": row["bucket"], "max": round(row["max_pct"], 2),
+                "mean": round(row["sum_pct"] / row["n"], 2) if row["n"] else 0.0,
+            })
+        return out
+
     def mem_history(self, since: datetime, name: str | None = None) -> dict[str, list[dict[str, Any]]]:
         """Every container's hourly peaks and means since `since`, oldest first."""
         clause, params = ("AND name = ?", [name]) if name else ("", [])
@@ -1865,8 +1994,11 @@ class Store:
             self._conn.execute("DELETE FROM drive_errors WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM drive_temps WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM drive_sleep WHERE at < ?", (cutoff,))
+            self._conn.execute("DELETE FROM drive_io WHERE at < ?", (cutoff,))
+            self._conn.execute("DELETE FROM drive_counters WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM container_changes WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM mem_samples WHERE bucket < ?", (cutoff,))
+            self._conn.execute("DELETE FROM cpu_samples WHERE bucket < ?", (cutoff,))
             self._conn.execute("DELETE FROM classifications WHERE at < ?", (cutoff,))
             self._conn.commit()
         return removed

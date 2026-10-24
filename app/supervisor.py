@@ -772,6 +772,11 @@ class Supervisor:
             for name, container in snapshots.items()
             if container.get("watched") and (container.get("stats") or {}).get("mem_usage_bytes")
         ])
+        self.store.record_cpu_samples([
+            (name, float(stats.get("cpu_host_pct", stats.get("cpu_pct", 0)) or 0))
+            for name, container in snapshots.items()
+            if container.get("watched") and (stats := container.get("stats") or {})
+        ])
 
     def _restarted_by_doctor(self, name: str, at: str) -> bool:
         """Whether one of the doctor's own restarts explains this one."""
@@ -892,6 +897,10 @@ class Supervisor:
         try:
             await asyncio.to_thread(self.store.record_host_sample, reading,
                                     bucket_minutes=self.settings.host_sample_minutes)
+            await asyncio.to_thread(
+                self.store.record_drive_io,
+                {self._drive_history_key(d["name"]): d for d in reading.get("disks") or []},
+                bucket_minutes=self.settings.host_sample_minutes)
             await self._notice_reboot(reading)
         except Exception:
             log.exception("could not record the host reading")
@@ -998,6 +1007,12 @@ class Supervisor:
         except Exception:
             log.exception("could not record drive temperatures")
         sleep = {drive_key(d): d["asleep"] for d in drives if smart.can_sleep(d)}
+        counters = {drive_key(d): smart.counters(d) for d in drives if not d["asleep"]}
+        try:
+            await asyncio.to_thread(self.store.record_drive_counters,
+                                    {k: v for k, v in counters.items() if v})
+        except Exception:
+            log.exception("could not record drive counters")
         try:
             await asyncio.to_thread(self.store.record_drive_sleep, sleep,
                                     bucket_minutes=self.settings.host_sample_minutes)
@@ -1005,6 +1020,12 @@ class Supervisor:
             log.exception("could not record drive sleep")
         await self._resolve_healthy_drives(drives)
         return signals
+
+    def _drive_history_key(self, device: str) -> str:
+        """The kernel's name for a disk, filed like SMART files it: under the
+        serial of the drive last seen in it, so its I/O sits beside its
+        temperature and sleep."""
+        return (self._drive_ids.get(device) or {}).get("serial") or device
 
     async def _recall_drives(self, drives: list[dict[str, Any]]) -> None:
         """A drive in standby answers with nothing but that. Fill in who it is
@@ -1092,7 +1113,24 @@ class Supervisor:
             "samples": self.store.host_history(since),
             "step_minutes": self.settings.host_sample_minutes,
             "reboots": self.store.list_changes(container_name=HOST_ID, since=since, limit=20),
+            "cpu_by_container": self.cpu_by_container(since),
         }
+
+    def cpu_by_container(self, since: datetime, count: int = 5) -> list[dict[str, Any]]:
+        """The containers that used the most CPU since `since`, from the hourly
+        record: the average share of the host, the busiest hour and its peak."""
+        out = []
+        for name, hours in self.store.cpu_history(since).items():
+            busiest = max(hours, key=lambda h: h["mean"])
+            out.append({
+                "name": name,
+                "mean": round(sum(h["mean"] for h in hours) / len(hours), 2),
+                "peak": max(h["max"] for h in hours),
+                "busiest_hour": busiest["bucket"],
+                "busiest_mean": busiest["mean"],
+            })
+        out.sort(key=lambda r: -r["mean"])
+        return [r for r in out if r["mean"] > 0][:count]
 
     def drive_temp_history(self, drive: str, hours: int) -> dict[str, Any]:
         since = datetime.now(timezone.utc) - timedelta(hours=hours)
@@ -1129,6 +1167,42 @@ class Supervisor:
             "asleep_pct": round(slept / len(samples) * 100) if samples else None,
             "wakes": wakes,
         }
+
+    def drive_io_history(self, drive: str, hours: int) -> dict[str, Any]:
+        """Each bucket's average read and write rate and busy share, and what
+        that adds up to over the range."""
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        step = self.settings.host_sample_minutes * 60
+        rows = self.store.drive_io_history(drive, since)
+        return {
+            "drive": drive,
+            "samples": [[datetime.fromisoformat(r["bucket"]).replace(tzinfo=timezone.utc)
+                         .isoformat(timespec="seconds"),
+                         round(r["read_bps"]), round(r["write_bps"]), round(r["busy_pct"], 1)]
+                        for r in rows],
+            "step_minutes": self.settings.host_sample_minutes,
+            "read_bytes": round(sum(r["read_bps"] for r in rows) * step),
+            "written_bytes": round(sum(r["write_bps"] for r in rows) * step),
+        }
+
+    def drive_counter_history(self, drive: str, days: int) -> dict[str, Any]:
+        """Per counter over the range: where it started, where it is, when it
+        last rose, and its readings - only for a counter that moved."""
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        rows = self.store.drive_counter_history(drive, since)
+        out = []
+        for key in smart.COUNTER_WORDS:
+            readings = [(r["at"], r["counters"][key]) for r in rows if key in r["counters"]]
+            if not readings:
+                continue
+            rose = [at for (at, v), (_, before) in zip(readings[1:], readings) if v > before]
+            out.append({
+                "key": key, "first": readings[0][1], "last": readings[-1][1],
+                "since": readings[0][0], "rose_at": rose[-1] if rose else None,
+                "rises": len(rose),
+                "series": readings if readings[0][1] != readings[-1][1] or rose else [],
+            })
+        return {"drive": drive, "days": days, "counters": out}
 
     async def _resolve_recovered_arrays(self, arrays: list[dict[str, Any]]) -> None:
         """Close an array's incident the poll it is whole again.
@@ -2493,6 +2567,8 @@ class Supervisor:
             "history_step_seconds": HISTORY_STEP_SECONDS,
             "changes": self.store.list_changes(container_name=name, limit=15),
             "memory": next(iter(self.memory_report(name)), None),
+            "cpu_hours": [[h["bucket"], h["mean"], h["max"]] for h in self.store.cpu_history(
+                datetime.now(timezone.utc) - MEMORY_WINDOW, name).get(name, [])],
         }
 
     # -- the dashboard briefing ----------------------------------------------

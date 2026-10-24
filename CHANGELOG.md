@@ -8,6 +8,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- A drive's page charts its reads and writes over 24 hours or 7 days, with
+  the totals and its busiest moment, from the kernel's own counters.
+- A drive's page shows its SMART counters over the last 30 days, one reading
+  an hour: which stayed steady, which rose and when, and spin-ups per day.
+- Each container's CPU is kept per hour for 14 days, charted on its page with
+  its busiest hour, and the Host page names the containers that used the most
+  CPU over the chosen range.
+
+### Added
+
 - A hard disk's page shows when it slept over the last 24 hours or 7 days: a
   bar of asleep and awake, the share of time asleep and how often it woke.
   Read from the SMART sidecar, which never wakes a drive to ask.
