@@ -1886,10 +1886,31 @@ function unwatchedNote(names) {
   if (!names.length) return "";
   const list = names.length === 1 ? names[0]
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `<p class="array-detail muted">Free space on ${esc(list)} is not watched. Mount an
-    empty folder on ${names.length === 1 ? "it" : "each"} read-only and add it to
-    <code>DOCTOR_DISK_PATHS</code>; see <a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#watching-every-volume"
-    target="_blank" rel="noopener">Watching every volume</a>.</p>`;
+  const link = `<a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#watching-every-volume"
+    target="_blank" rel="noopener">Watching every volume</a>`;
+  // DSM mounts Volume N at /volumeN, so on a Synology the lines can be given
+  // whole; elsewhere only the host knows where its volumes are.
+  const numbers = names.map((n) => /^Volume (\d+)$/.exec(n)?.[1]);
+  if (numbers.some((n) => !n)) {
+    return `<p class="array-detail muted">Free space on ${esc(list)} is not watched. Create an
+      empty folder on ${names.length === 1 ? "it" : "each"}, mount it read-only and add it to
+      <code>DOCTOR_DISK_PATHS</code>; see ${link}.</p>`;
+  }
+  const folders = numbers.map((n) => `/volume${n}/@container-doctor-disk`);
+  const paths = [...(state.snapshot.disk || []).map((d) => d.path), ...numbers.map((n) => `/disks/volume${n}`)];
+  const lines = [
+    `sudo mkdir -p ${folders.join(" ")}`,
+    "",
+    "volumes:",
+    ...numbers.map((n, i) => `  - ${folders[i]}:/disks/volume${n}:ro`),
+    "",
+    `DOCTOR_DISK_PATHS=${paths.join(",")}`,
+  ];
+  return `<div class="array-detail muted"><p>Free space on ${esc(list)} is not watched. Create
+      ${names.length === 1 ? "a folder" : "a folder on each"} first - Docker on a Synology does not
+      create a missing one - then mount ${names.length === 1 ? "it" : "them"} read-only and add
+      ${names.length === 1 ? "it" : "them"} to the paths; see ${link}.</p>
+    <pre class="array-snippet">${esc(lines.join("\n"))}</pre></div>`;
 }
 
 // The volume a watched path lives on, when the arrays name it.

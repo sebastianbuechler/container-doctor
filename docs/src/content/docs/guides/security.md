@@ -54,7 +54,10 @@ volumes:
 DOCTOR_DISK_PATHS=/data,/host/media
 ```
 
-An empty directory works fine; only the filesystem it sits on is read.
+An empty directory works fine; only the filesystem it sits on is read. Create
+it before the stack starts: not every Docker creates a missing one, Synology's
+among them. See
+[Watching every volume](/container-doctor/guides/storage/#watching-every-volume).
 
 The disk-array check adds no mount either: `/proc/mdstat` reports member counts
 and rebuild progress, and `/sys` the layout, drive models and error counts —
