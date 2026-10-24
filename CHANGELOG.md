@@ -20,6 +20,14 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   page - its parent interface, and that the host cannot reach its containers
   without a shim - rather than as a note in the list above.
 
+### Fixed
+
+- A Traefik started with `--providers.docker.network` (or
+  `TRAEFIK_PROVIDERS_DOCKER_NETWORK`) now counts as `traefik.docker.network`
+  for every container without the label: routed containers on several
+  networks are no longer called ambiguous, and are warned about when they are
+  not on that network.
+
 ## [0.4.1] - 2026-10-24
 
 ### Changed
@@ -33,11 +41,6 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   Synology it does not, and the deploy fails; they now say to create it first,
   and the example uses a folder at the volume's root (`@container-doctor-disk`)
   rather than one in a shared folder.
-- A Traefik started with `--providers.docker.network` (or
-  `TRAEFIK_PROVIDERS_DOCKER_NETWORK`) now counts as `traefik.docker.network`
-  for every container without the label: routed containers on several
-  networks are no longer called ambiguous, and are warned about when they are
-  not on that network.
 
 ## [0.4.0] - 2026-10-24
 
