@@ -533,7 +533,8 @@ class Settings:
     smart_nvme_temp_c: float = setting("DOCTOR_SMART_NVME_TEMP_C", 70.0)
     # Share of an SSD's rated write endurance used before it is worth a word.
     smart_wear_pct: float = setting("DOCTOR_SMART_WEAR_PCT", 90.0)
-    # One stored point per this many minutes, for the Host page's charts.
+    # One stored point per this many minutes, for the Host page's charts and
+    # each drive's temperature and sleep.
     host_sample_minutes: int = setting("DOCTOR_HOST_SAMPLE_MINUTES", 5)
     # Read GitHub release notes for images with a newer version, to link them
     # and flag the ones that mention breaking changes. One unauthenticated

@@ -1020,6 +1020,12 @@ def build_app(supervisor: Supervisor, settings: Settings,
         hours = max(1, min(hours, 24 * supervisor.settings.retention_days))
         return await asyncio.to_thread(supervisor.drive_temp_history, drive[:128], hours)
 
+    @app.get("/api/drive/sleep")
+    async def drive_sleep(drive: str, hours: int = 24,
+                          _: str = Depends(identify)) -> dict[str, Any]:
+        hours = max(1, min(hours, 24 * supervisor.settings.retention_days))
+        return await asyncio.to_thread(supervisor.drive_sleep_history, drive[:128], hours)
+
     @app.get("/api/disk/history")
     async def disk_history(days: int = 14, _: str = Depends(identify)) -> dict[str, Any]:
         days = max(1, min(days, supervisor.settings.retention_days))

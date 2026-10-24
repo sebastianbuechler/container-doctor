@@ -335,6 +335,10 @@ def smart_metrics() -> str:
                         'smartctl_device_percentage_used{device="nvme0n1"} 7')
     text = re.sub(r'(attribute_name="Current_Pending_Sector",attribute_value_type="raw",'
                   r'device="sdb"\}) 8', r'\1 0', text)
+    # How often each disk has spun up: a few a day over its three years.
+    for device, count in (("sda", 3412), ("sdb", 3398)):
+        text += (f'smartctl_device_attribute{{attribute_name="Start_Stop_Count",'
+                 f'attribute_value_type="raw",device="{device}"}} {count}\n')
     return text
 
 

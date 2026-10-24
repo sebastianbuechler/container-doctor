@@ -17,7 +17,8 @@ What is read, per drive:
   so only a count that grows is reported;
 - for NVMe: the controller's critical warning, media errors, wear (percentage
   used) and spare capacity left;
-- temperature and power-on time, for the page;
+- temperature and power-on time, for the page, and how often a hard disk
+  has spun up (Start_Stop_Count);
 - and, for the drive's own page, what it has been through: data written and
   read over its life, an SSD's wear, the head parks of a hard disk, its
   link speed, the errors it logged itself and failed self-tests.
@@ -60,6 +61,10 @@ _DATA = {
 _LIFE_LEFT = ("Wear_Leveling_Count", "Media_Wearout_Indicator", "Percent_Lifetime_Remain",
               "SSD_Life_Left", "Remaining_Lifetime_Perc")
 _LOAD_CYCLES = "Load_Cycle_Count"
+_SPIN_UPS = "Start_Stop_Count"
+# What a drive in standby no longer says about itself, but still is: kept from
+# its last reading awake, so it keeps its name and its history while asleep.
+IDENTITY = ("model", "serial", "family", "protocol", "firmware", "rotation_rpm")
 _BAY = re.compile(r"^(?:sata|sas)(?P<n>\d+)$")
 _SAMPLE = re.compile(r'^([a-zA-Z_:][a-zA-Z0-9_:]*)(?:\{(.*)\})?\s+(\S+)')
 _LABEL = re.compile(r'(\w+)="((?:[^"\\]|\\.)*)"')
@@ -101,7 +106,8 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
             "temperature": None, "power_on_hours": None, "power_cycles": None,
             "counters": {}, "crc_errors": None, "nvme": {},
             "rotation_rpm": None, "link_bps": None, "bytes_written": None, "bytes_read": None,
-            "wear_pct": None, "load_cycles": None, "error_log": None, "self_test_errors": None,
+            "wear_pct": None, "load_cycles": None, "spin_ups": None, "error_log": None,
+            "self_test_errors": None,
             "_data": {}, "_life": {}, "_sector": 512, "_metric": {},
         })
 
@@ -137,6 +143,8 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
                 d["_data"][attribute] = value
             elif attribute == _LOAD_CYCLES:
                 d["load_cycles"] = int(value)
+            elif attribute == _SPIN_UPS:
+                d["spin_ups"] = int(value)
         elif name == "smartctl_device_attribute" and labels.get("attribute_value_type") == "value":
             if labels.get("attribute_name") in _LIFE_LEFT:
                 d["_life"][labels["attribute_name"]] = value
@@ -165,6 +173,11 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
     # The bays in order, as DSM numbers them, then everything else.
     return sorted(by_device.values(),
                   key=lambda d: (not _BAY.match(d["device"]), _natural(d["device"])))
+
+
+def can_sleep(d: dict[str, Any]) -> bool:
+    """A spinning disk: SSDs (rotation 0) and NVMe have nothing to spin down."""
+    return d["asleep"] or (d.get("rotation_rpm") or 0) > 0
 
 
 def _lifetime(d: dict[str, Any]) -> None:

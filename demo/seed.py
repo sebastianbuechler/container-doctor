@@ -69,11 +69,16 @@ def host(store: Store, at: type[_Clock]) -> None:
             "load": [round(0.6 + 2.4 * busy + rng.uniform(0, 0.4), 2)],
             "temperatures": [{"celsius": round(44 + 10 * busy + rng.uniform(-1, 1), 1)}],
         }, bucket_minutes=5)
-        store.record_drive_temps({
-            SERIALS["sda"]: 33 + 3 * busy + rng.uniform(-0.5, 0.5),
-            SERIALS["sdb"]: 35 + 4 * busy + rng.uniform(-0.5, 0.5),
-            SERIALS["nvme0n1"]: 41 + 7 * busy + rng.uniform(-1, 1),
-        }, bucket_minutes=5)
+        # The mirror sleeps through the night but for the 3 a.m. backup, and
+        # through a quiet spell after lunch. Asleep, it has no temperature.
+        hour = t.hour + t.minute / 60
+        asleep = 0.5 <= hour < 3 or 3.5 <= hour < 7.5 or 13.5 <= hour < 15
+        temps = {SERIALS["nvme0n1"]: 41 + 7 * busy + rng.uniform(-1, 1)}
+        if not asleep:
+            temps[SERIALS["sda"]] = 33 + 3 * busy + rng.uniform(-0.5, 0.5)
+            temps[SERIALS["sdb"]] = 35 + 4 * busy + rng.uniform(-0.5, 0.5)
+        store.record_drive_temps(temps, bucket_minutes=5)
+        store.record_drive_sleep({SERIALS["sda"]: asleep, SERIALS["sdb"]: asleep}, bucket_minutes=5)
         t += step
 
 

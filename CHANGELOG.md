@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A hard disk's page shows when it slept over the last 24 hours or 7 days: a
+  bar of asleep and awake, the share of time asleep and how often it woke.
+  Read from the SMART sidecar, which never wakes a drive to ask.
+- A hard disk's page shows how often it has spun up (`Start_Stop_Count`).
+
+### Changed
+
+- A drive asleep keeps its serial and model on the Storage page, remembered
+  from its last reading awake, so its temperature history stays found too.
+
 ## [0.3.0] - 2026-10-20
 
 ### Changed
