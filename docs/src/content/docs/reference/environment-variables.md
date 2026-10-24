@@ -372,13 +372,13 @@ Resolved the way containers resolve names.
 
 ### DOCTOR_NET_DNS_SERVERS
 
-Your own DNS servers, each checked on its own: ip or ip:port.
+Your own DNS servers, each checked on its own: ip, ip:port or a container name.
 
 **Default:** `none` · **Type:** comma-separated list
 
 ### DOCTOR_NET_HTTP_URLS
 
-DNS servers asked directly - a Pi-hole, AdGuard, the router - as ip or ip:port. Empty by default: which ones exist is the network's business.
+DNS servers asked directly - a Pi-hole, AdGuard, the router - as ip, ip:port or a container name on a network the doctor shares. Empty by default: which ones exist is the network's business.
 
 **Default:** `https://www.cloudflare.com/cdn-cgi/trace` · **Type:** comma-separated list
 

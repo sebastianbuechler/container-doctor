@@ -20,7 +20,18 @@ gateway.
 - **Cards** (or the **matrix**, from the layout switch) list every network's
   members. Pointing at a container lights it up on every network it is on.
 - **Published ports** lists what is bound on the host itself, and whether on
-  every interface or one address.
+  every interface or one address. A running container's ports come from what
+  Docker actually bound; only a stopped one shows its configured `ports:`
+  instead. A container on `macvlan` alone has its `ports:` ignored by Docker,
+  so nothing of it shows here.
+- **On the LAN directly**, below it, lists every container on a `macvlan` or
+  `ipvlan` network at its own LAN address — a Traefik or Pi-hole reached like
+  a machine of its own, with nothing published on the host. Its ports are what
+  the image's `EXPOSE`, compose's `expose:` and the inside half of `ports:`
+  declare; what really listens there (Traefik's entrypoints, say) Docker
+  cannot see. Needs Docker's network list, which names the driver.
+
+<Screenshot name="ports" alt="Published ports, and below them the containers on a macvlan network at their own LAN address with the ports their image declares." />
 
 It also notes wiring mistakes. None opens an incident:
 
@@ -53,6 +64,11 @@ A DNS server is asked with a hand-built UDP query, so no resolver library and
 no extra access is needed. List your Pi-hole, AdGuard or router there: a dead
 local DNS server is the classic "everything is broken" that the line itself
 does not explain.
+
+A Pi-hole on `macvlan` on the same host times out at its LAN address: the host
+and its bridge containers cannot reach macvlan addresses. Put the doctor on a
+bridge network the Pi-hole is also on and list it by container name —
+`DOCTOR_NET_DNS_SERVERS=pihole` — and Docker's DNS finds its address there.
 
 Each failure is blamed once: no internet explains failing DNS and HTTPS too,
 and failing DNS explains failing HTTPS. After `DOCTOR_NET_FAIL_ROUNDS` (3)

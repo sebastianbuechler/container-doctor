@@ -6,6 +6,25 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-24
+
+### Added
+
+- Network: **On the LAN directly** lists every container on a macvlan or
+  ipvlan network at its own LAN address, with the ports its image and compose
+  declare - a Traefik or Pi-hole that publishes nothing on the host.
+
+### Fixed
+
+- Published ports no longer lists the `ports:` of a running container that
+  Docker bound nothing for, such as one on macvlan alone. Only a stopped
+  container shows its configured ports, as before.
+
+### Documentation
+
+- `DOCTOR_NET_DNS_SERVERS` takes a container name, the way to check a Pi-hole
+  on macvlan that the doctor cannot reach at its LAN address.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
@@ -162,7 +181,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
 
-[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.1.0...v0.2.0

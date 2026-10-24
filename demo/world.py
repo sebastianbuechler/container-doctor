@@ -52,6 +52,7 @@ class Box:
     started: datetime | None = None
     networks: tuple[str, ...] = ()
     ports: tuple[tuple[str, str, str], ...] = ()   # (container port/proto, host ip, host port)
+    exposed: tuple[str, ...] = ()    # the image's EXPOSE
     labels: dict[str, str] = field(default_factory=dict)
     logs: str = "quiet"              # which log script it follows
     depends_on: str = ""
@@ -139,6 +140,13 @@ def _boxes() -> list[Box]:
         Box("doctor-smart", "container-doctor", "doctor-smart",
             "prometheuscommunity/smartctl-exporter:v0.14.0", 0.0, 14 * MIB, 128 * MIB,
             networks=("container-doctor_default",), logs="quiet"),
+        # On the LAN with an address of its own: its ports: are ignored, and
+        # nothing is bound on the host.
+        Box("pihole", "dns", "pihole", "pihole/pihole:2025.08.0", 0.4, 96 * MIB, 256 * MIB,
+            health="healthy", networks=("lan",), logs="quiet",
+            ports=(("53/udp", "", "53"), ("53/tcp", "", "53"), ("80/tcp", "", "8053")),
+            exposed=("53/tcp", "53/udp", "67/udp", "80/tcp", "443/tcp"),
+            source="https://github.com/pi-hole/docker-pi-hole"),
     ]
 
 
@@ -155,7 +163,10 @@ NETWORKS = {
     "notes_default": ("bridge", "172.23.0.0/16", False),
     "backup_default": ("bridge", "172.24.0.0/16", False),
     "container-doctor_default": ("bridge", "172.25.0.0/16", False),
+    "lan": ("macvlan", "192.168.1.0/24", False),
 }
+# Addresses on the LAN are handed out by hand, not by Docker.
+LAN_ADDRESSES = {"pihole": "192.168.1.53"}
 
 
 # -- logs ------------------------------------------------------------------------

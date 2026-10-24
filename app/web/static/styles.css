@@ -2972,6 +2972,7 @@ body[data-offline] main { opacity: 0.55; filter: saturate(0.4); transition: opac
 
 #network-ports { padding: 4px 16px 16px; }
 .net-ports { width: 100%; }
+.net-ports-head { margin: 18px 0 6px; font-size: 13px; font-weight: 600; }
 .net-ports th, .net-ports td { text-align: left; padding: 6px 14px 6px 0; border-bottom: 1px solid var(--hairline); white-space: nowrap; }
 .net-ports th { font-weight: 500; color: var(--ink-muted); }
 .net-ports code { font-family: var(--mono); font-size: 12px; }

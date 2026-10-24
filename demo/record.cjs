@@ -37,6 +37,7 @@ const SHOTS = [
   ["host", "#/host"],
   ["host-cpu", "#/host", "#host-cpu-top"],
   ["network", "#/network"],
+  ["ports", "#/network", "#panel-ports"],
   ["updates", "#/updates"],
   ["activity", "#/activity"],
   ["llm", "#/llm"],
