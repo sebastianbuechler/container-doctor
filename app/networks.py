@@ -10,7 +10,9 @@ show, and `internal` is inferred from containers on it getting no gateway.
 Nothing here opens an incident. The findings are wiring mistakes that cost an
 evening to spot by hand - Traefik pointed at a network the container is not
 on, a service published on every interface as well as behind the proxy - and
-they are shown, not acted on.
+they are shown, not acted on. One that is meant can be dismissed: each has a
+`key` that stays the same from poll to poll, and dismissed ones are listed
+apart, out of the count.
 """
 
 from __future__ import annotations
@@ -54,7 +56,30 @@ def container_network(attrs: dict[str, Any]) -> dict[str, Any]:
         "ports": _ports(settings.get("Ports"), host.get("PortBindings"),
                         (attrs.get("State") or {}).get("Running")),
         "container_ports": _container_ports(config.get("ExposedPorts"), host.get("PortBindings")),
+        "traefik_default": _traefik_default_network(config),
     }
+
+
+_TRAEFIK_FLAG = "--providers.docker.network"
+_TRAEFIK_ENV = "TRAEFIK_PROVIDERS_DOCKER_NETWORK="
+
+
+def _traefik_default_network(config: dict[str, Any]) -> str:
+    """The network Traefik uses for every container without a
+    traefik.docker.network label, when this container is a Traefik started
+    with --providers.docker.network or its environment variable. A setting
+    in a mounted traefik.yml cannot be seen from here."""
+    args = [*(config.get("Entrypoint") or []), *(config.get("Cmd") or [])]
+    for i, arg in enumerate(args):
+        arg = str(arg)
+        if arg.startswith(_TRAEFIK_FLAG + "="):
+            return arg.split("=", 1)[1].strip()
+        if arg == _TRAEFIK_FLAG and i + 1 < len(args):
+            return str(args[i + 1]).strip()
+    for entry in config.get("Env") or []:
+        if str(entry).startswith(_TRAEFIK_ENV):
+            return str(entry)[len(_TRAEFIK_ENV):].strip()
+    return ""
 
 
 def _ports(live: dict | None, configured: dict | None,
@@ -117,11 +142,14 @@ def _subnet(ip: str, prefix: int) -> str:
 
 
 def report(containers: list[dict[str, Any]],
-           inventory: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           inventory: list[dict[str, Any]] | None = None,
+           dismissed: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """Networks, members and findings for the dashboard, from the last poll.
 
     `inventory` is Docker's own network list, or None when it could not be
     read - then everything is worked out from the containers alone.
+    `dismissed` maps a finding's key to who dismissed it and when; those
+    findings move to their own list.
     """
     networks: dict[str, dict[str, Any]] = {}
     host_mode: list[str] = []
@@ -131,6 +159,10 @@ def report(containers: list[dict[str, Any]],
     own_ports: dict[str, list[dict[str, str]]] = {}
     findings: list[dict[str, Any]] = []
     multi_homed = 0
+    # Traefik's own default for containers without traefik.docker.network.
+    # Two Traefiks that disagree leave it unknown.
+    defaults = {(c.get("network") or {}).get("traefik_default") for c in containers} - {"", None}
+    traefik_default = next(iter(defaults)) if len(defaults) == 1 else ""
 
     for container in sorted(containers, key=lambda c: c.get("name", "")):
         net = container.get("network")
@@ -170,7 +202,7 @@ def report(containers: list[dict[str, Any]],
         ports = net.get("ports") or []
         if ports:
             exposed.append({**member, "ports": ports})
-        findings.extend(_findings(container, net, ports))
+        findings.extend(_findings(container, net, ports, traefik_default))
 
     for n in networks.values():
         # An internal network is a guess from the absence of a gateway, and
@@ -197,6 +229,11 @@ def report(containers: list[dict[str, Any]],
     findings.extend(_overlaps(out_networks))
     findings.extend(_network_findings(out_networks))
     findings.sort(key=lambda f: (_SEVERITY_RANK[f["severity"]], f.get("container", ""), f["kind"]))
+    for f in findings:
+        f["key"] = f"{f['kind']}:{f['container'] or f.pop('subject', '')}"
+    dismissed = dismissed or {}
+    set_aside = [{**f, **dismissed[f["key"]]} for f in findings if f["key"] in dismissed]
+    findings = [f for f in findings if f["key"] not in dismissed]
     return {
         "networks": out_networks,
         "host_mode": host_mode,
@@ -207,6 +244,7 @@ def report(containers: list[dict[str, Any]],
         # directly, with nothing published on the host.
         "lan": lan,
         "findings": findings,
+        "dismissed": set_aside,
         # Whether drivers, flags and unused networks are Docker's word or
         # missing, for the page to say which.
         "inventory": inventory is not None,
@@ -310,16 +348,10 @@ def _network_findings(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         name = n["name"]
         if _unused(n, in_use):
             origin = f" (from stack {n['project']})" if n.get("project") else ""
-            out.append({"kind": "unused_network", "severity": "info", "container": "",
+            out.append({"kind": "unused_network", "severity": "info", "container": "", "subject": name,
                         "summary": f"Nobody is on {name}{origin}. Left over from a removed "
                                    "stack, or for one that is down - docker network rm "
                                    "clears it if it is not coming back."})
-        if n.get("driver") in _LAN_DRIVERS:
-            via = f" on {n['parent']}" if n.get("parent") else ""
-            out.append({"kind": "lan_network", "severity": "info", "container": "",
-                        "summary": f"{name} is {n['driver']}{via}: its containers have "
-                                   "addresses of their own on the LAN, and the host itself "
-                                   "cannot reach them without a macvlan shim."})
     return out
 
 
@@ -335,7 +367,7 @@ _SEVERITY_RANK = {"warning": 0, "info": 1}
 
 
 def _findings(container: dict[str, Any], net: dict[str, Any],
-              ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              ports: list[dict[str, Any]], traefik_default: str = "") -> list[dict[str, Any]]:
     labels = container.get("labels") or {}
     name = container["name"]
     mode = net.get("mode") or ""
@@ -347,10 +379,13 @@ def _findings(container: dict[str, Any], net: dict[str, Any],
 
     routed = str(labels.get("traefik.enable", "")).lower() == "true"
     wanted = labels.get("traefik.docker.network", "")
+    source = "traefik.docker.network"
+    if not wanted and traefik_default:
+        wanted, source = traefik_default, "Traefik's providers.docker.network"
     if routed and mode != "host":
         if wanted and wanted not in names and not any(n.endswith(f"_{wanted}") for n in names):
             add("traefik_network_missing", "warning",
-                f"traefik.docker.network names {wanted}, which {name} is not attached to - "
+                f"{source} names {wanted}, which {name} is not attached to - "
                 "Traefik will answer 502/504 for it.")
         elif not wanted and len(names) > 1:
             add("traefik_network_ambiguous", "info",
@@ -389,5 +424,6 @@ def _overlaps(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for b, net_b in parsed[i + 1:]:
             if a != b and net_a.version == net_b.version and net_a.overlaps(net_b):
                 out.append({"kind": "subnet_overlap", "severity": "warning", "container": "",
+                            "subject": f"{a}|{b}",
                             "summary": f"{a} ({net_a}) and {b} ({net_b}) overlap."})
     return out

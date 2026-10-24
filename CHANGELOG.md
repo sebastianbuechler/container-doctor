@@ -6,7 +6,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.5.0] - 2026-10-24
+## [0.6.0] - 2026-10-24
 
 ### Added
 
@@ -24,6 +24,42 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NET_DNS_SERVERS` takes a container name, the way to check a Pi-hole
   on macvlan that the doctor cannot reach at its LAN address.
+
+## [0.5.0] - 2026-10-24
+
+### Added
+
+- A network note that is meant can be dismissed. It moves under *dismissed*,
+  saying who and when, stops counting towards the page's warnings, and stays
+  dismissed from poll to poll until restored.
+
+### Changed
+
+- A `macvlan` or `ipvlan` network is explained on its card on the Network
+  page - its parent interface, and that the host cannot reach its containers
+  without a shim - rather than as a note in the list above.
+
+### Fixed
+
+- A Traefik started with `--providers.docker.network` (or
+  `TRAEFIK_PROVIDERS_DOCKER_NETWORK`) now counts as `traefik.docker.network`
+  for every container without the label: routed containers on several
+  networks are no longer called ambiguous, and are warned about when they are
+  not on that network.
+
+## [0.4.1] - 2026-10-24
+
+### Changed
+
+- *Free space not watched* under Disk arrays gives, on a Synology, the lines
+  to add: the `mkdir`, the mounts and the whole `DOCTOR_DISK_PATHS`.
+
+### Fixed
+
+- The docs said Docker creates a missing folder for a watched volume. On a
+  Synology it does not, and the deploy fails; they now say to create it first,
+  and the example uses a folder at the volume's root (`@container-doctor-disk`)
+  rather than one in a shared folder.
 
 ## [0.4.0] - 2026-10-24
 
@@ -181,8 +217,10 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
 
-[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.0...v0.5.0
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.5.0...v0.6.0
+[0.5.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.1...v0.5.0
+[0.4.1]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.1.0...v0.2.0

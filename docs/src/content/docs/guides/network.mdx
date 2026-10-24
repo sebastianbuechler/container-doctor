@@ -18,7 +18,10 @@ gateway.
   wired to those networks. Those are the ones joining segments together — the
   doctor itself, anything behind Traefik that also talks to its own database.
 - **Cards** (or the **matrix**, from the layout switch) list every network's
-  members. Pointing at a container lights it up on every network it is on.
+  members. Pointing at a container lights it up on every network it is on. A
+  `macvlan` or `ipvlan` card names its parent interface and says that its
+  containers have addresses of their own on the LAN, which the host itself
+  cannot reach without a shim.
 - **Published ports** lists what is bound on the host itself, and whether on
   every interface or one address. A running container's ports come from what
   Docker actually bound; only a stopped one shows its configured `ports:`
@@ -43,7 +46,19 @@ It also notes wiring mistakes. None opens an incident:
 | On Docker's default `bridge` | No name resolution between containers there |
 | Two networks' subnets overlap | Traffic goes to whichever Docker set up last |
 | Nobody is on a network | Left over from a removed stack, or one that is down |
-| A network is `macvlan` / `ipvlan` | Its containers are on the LAN, and the host itself cannot reach them without a shim |
+
+A Traefik started with `--providers.docker.network` (or
+`TRAEFIK_PROVIDERS_DOCKER_NETWORK`) counts as that label on every container
+that has none: they are not called ambiguous, and are warned about when they are
+not on that network. The same setting in a mounted `traefik.yml` cannot be seen,
+so there the label is still what settles it.
+
+A note that is meant — a port published on purpose, a network kept for a stack
+that is down — can be **dismissed**. It moves under *dismissed* below the
+notes, saying who dismissed it and when, and no longer counts towards the
+page's warnings. It stays dismissed from poll to poll, kept by what it is about
+(the kind of note and its container or network), until it is **restored**
+there. Like approving an action, it needs a sign-in (a password or OIDC).
 
 <Screenshot name="network" alt="The Network page: which containers share a network, what the host publishes, and the internet and DNS checks." />
 

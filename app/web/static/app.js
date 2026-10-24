@@ -1890,10 +1890,31 @@ function unwatchedNote(names) {
   if (!names.length) return "";
   const list = names.length === 1 ? names[0]
     : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
-  return `<p class="array-detail muted">Free space on ${esc(list)} is not watched. Mount an
-    empty folder on ${names.length === 1 ? "it" : "each"} read-only and add it to
-    <code>DOCTOR_DISK_PATHS</code>; see <a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#watching-every-volume"
-    target="_blank" rel="noopener">Watching every volume</a>.</p>`;
+  const link = `<a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#watching-every-volume"
+    target="_blank" rel="noopener">Watching every volume</a>`;
+  // DSM mounts Volume N at /volumeN, so on a Synology the lines can be given
+  // whole; elsewhere only the host knows where its volumes are.
+  const numbers = names.map((n) => /^Volume (\d+)$/.exec(n)?.[1]);
+  if (numbers.some((n) => !n)) {
+    return `<p class="array-detail muted">Free space on ${esc(list)} is not watched. Create an
+      empty folder on ${names.length === 1 ? "it" : "each"}, mount it read-only and add it to
+      <code>DOCTOR_DISK_PATHS</code>; see ${link}.</p>`;
+  }
+  const folders = numbers.map((n) => `/volume${n}/@container-doctor-disk`);
+  const paths = [...(state.snapshot.disk || []).map((d) => d.path), ...numbers.map((n) => `/disks/volume${n}`)];
+  const lines = [
+    `sudo mkdir -p ${folders.join(" ")}`,
+    "",
+    "volumes:",
+    ...numbers.map((n, i) => `  - ${folders[i]}:/disks/volume${n}:ro`),
+    "",
+    `DOCTOR_DISK_PATHS=${paths.join(",")}`,
+  ];
+  return `<div class="array-detail muted"><p>Free space on ${esc(list)} is not watched. Create
+      ${names.length === 1 ? "a folder" : "a folder on each"} first - Docker on a Synology does not
+      create a missing one - then mount ${names.length === 1 ? "it" : "them"} read-only and add
+      ${names.length === 1 ? "it" : "them"} to the paths; see ${link}.</p>
+    <pre class="array-snippet">${esc(lines.join("\n"))}</pre></div>`;
 }
 
 // The volume a watched path lives on, when the arrays name it.
@@ -2788,7 +2809,8 @@ function netTags(n) {
   else if (n.unused) tags.push(["unused", "nobody is attached to it"]);
   if (n.config_from) tags.push([`from ${n.config_from}`, "created from that template"]);
   if (n.driver && !["bridge", "null"].includes(n.driver)) {
-    tags.push([n.driver, n.parent ? `on ${n.parent}` : n.driver]);
+    tags.push([n.parent && lanDriver(n) ? `${n.driver} on ${n.parent}` : n.driver,
+      n.parent ? `on ${n.parent}` : n.driver]);
   }
   if (n.internal) {
     tags.push(["internal", n.source === "docker" ? "no way out to the internet"
@@ -2800,6 +2822,10 @@ function netTags(n) {
   if (n.stacks.length > 1) tags.push([`${n.stacks.length} stacks`, n.stacks.join(", ")]);
   return tags.map(([label, title]) =>
     `<span class="net-tag" title="${esc(title)}">${esc(label)}</span>`).join("");
+}
+
+function lanDriver(n) {
+  return ["macvlan", "ipvlan"].includes(n.driver);
 }
 
 function netCard(n, count) {
@@ -2818,7 +2844,9 @@ function netCard(n, count) {
       <header class="net-card-head">
         <strong class="net-name">${esc(n.name)}</strong>${netTags(n)}
         <span class="net-figures">${figures}</span>
-      </header>
+      </header>${lanDriver(n) && !n.config_only ? `
+      <p class="net-card-note">Its containers have addresses of their own on the LAN. The host
+        itself cannot reach them without a ${esc(n.driver)} shim.</p>` : ""}
       <ul class="net-members">${members.map((m) => {
         const on = count.get(m.name) || 1;
         const aliases = (m.aliases || []).length ? ` · also ${m.aliases.join(", ")}` : "";
@@ -2921,8 +2949,44 @@ function findingRow(f) {
   const who = f.container
     ? `<a href="#container/${encodeURIComponent(f.container)}"><strong>${esc(f.container)}</strong></a> `
     : "";
-  return `<li class="net-finding">${statusPill(f.severity, level)}<span>${who}${esc(f.summary)}</span></li>`;
+  return `<li class="net-finding">${statusPill(f.severity, level)}<span>${who}${esc(f.summary)}</span>
+    <button type="button" class="btn btn-small btn-quiet net-finding-act" data-finding-dismiss="${esc(f.key)}"
+      title="Meant this way - set it aside until restored">Dismiss</button></li>`;
 }
+
+function dismissedFindings(list) {
+  if (!list.length) return "";
+  return `<details class="net-dismissed"><summary>${list.length} dismissed</summary>
+    <ul class="net-finding-list">${list.map((f) => {
+      const who = f.container ? `<strong>${esc(f.container)}</strong> ` : "";
+      const by = [f.dismissed_by && `by ${f.dismissed_by}`, f.dismissed_at && ago(f.dismissed_at)]
+        .filter(Boolean).join(", ");
+      return `<li class="net-finding is-dismissed">${statusPill(f.severity, "neutral")}
+        <span>${who}${esc(f.summary)}${by ? ` <span class="muted">Dismissed ${esc(by)}.</span>` : ""}</span>
+        <button type="button" class="btn btn-small net-finding-act" data-finding-restore="${esc(f.key)}">Restore</button></li>`;
+    }).join("")}</ul></details>`;
+}
+
+async function setFinding(key, action) {
+  try {
+    await api(`/api/networks/findings/${action}`, { method: "POST", body: JSON.stringify({ key }) });
+  } catch (error) {
+    toast(`Could not ${action}: ${error.message}`, "error");
+    return;
+  }
+  toast(action === "dismiss" ? "Note dismissed." : "Note restored.");
+  await refreshNetwork();
+}
+
+document.addEventListener("click", (event) => {
+  const dismiss = event.target.closest("[data-finding-dismiss]");
+  const restore = event.target.closest("[data-finding-restore]");
+  const button = dismiss || restore;
+  if (!button) return;
+  button.disabled = true;
+  setFinding(dismiss ? dismiss.dataset.findingDismiss : restore.dataset.findingRestore,
+    dismiss ? "dismiss" : "restore");
+});
 
 function renderNetwork() {
   const report = state.network;
@@ -2943,8 +3007,9 @@ function renderNetwork() {
   ].map(([label, value]) => `<div class="net-stat"><span>${label}</span><strong>${value ?? 0}</strong></div>`).join("") : "";
 
   const findings = report.findings || [];
-  $("network-findings").innerHTML = findings.length
-    ? `<ul class="net-finding-list">${findings.map(findingRow).join("")}</ul>` : "";
+  $("network-findings").innerHTML = (findings.length
+    ? `<ul class="net-finding-list">${findings.map(findingRow).join("")}</ul>` : "")
+    + dismissedFindings(report.dismissed || []);
 
   const special = [];
   if ((report.host_mode || []).length) {

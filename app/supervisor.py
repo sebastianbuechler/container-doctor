@@ -2533,7 +2533,8 @@ class Supervisor:
         }
 
     def network_report(self) -> dict[str, Any]:
-        report = networks.report(list(self.containers.values()), self.network_inventory)
+        report = networks.report(list(self.containers.values()), self.network_inventory,
+                                 self.store.dismissed_findings())
         report["last_poll_at"] = self.last_poll_at
         return report
 

@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS host_state (
     value TEXT NOT NULL
 );
 
+-- Network notes someone dismissed as meant, by the note's key (its kind and
+-- the container or network it is about). Kept until restored.
+CREATE TABLE IF NOT EXISTS dismissed_findings (
+    key          TEXT PRIMARY KEY,
+    dismissed_by TEXT NOT NULL,
+    dismissed_at TEXT NOT NULL
+);
+
 -- Per container name, the Docker timestamp of the newest log line the rules
 -- have read: kept so a restart of the doctor does not read the last hour of
 -- every container's log as news.
@@ -1174,6 +1182,26 @@ class Store:
                 "INSERT INTO host_state (key, value) VALUES (?,?) "
                 "ON CONFLICT(key) DO UPDATE SET value=excluded.value", (key, value))
             self._conn.commit()
+
+    def dismissed_findings(self) -> dict[str, dict[str, str]]:
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT key, dismissed_by, dismissed_at FROM dismissed_findings").fetchall()
+        return {row["key"]: {"dismissed_by": row["dismissed_by"],
+                             "dismissed_at": row["dismissed_at"]} for row in rows}
+
+    def dismiss_finding(self, key: str, actor: str) -> None:
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO dismissed_findings (key, dismissed_by, dismissed_at) VALUES (?,?,?) "
+                "ON CONFLICT(key) DO NOTHING", (key, actor or "", utcnow()))
+            self._conn.commit()
+
+    def restore_finding(self, key: str) -> bool:
+        with self._lock:
+            cur = self._conn.execute("DELETE FROM dismissed_findings WHERE key=?", (key,))
+            self._conn.commit()
+        return cur.rowcount > 0
 
     def log_marks(self) -> dict[str, str]:
         with self._read() as conn:
