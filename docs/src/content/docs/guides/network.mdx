@@ -34,6 +34,12 @@ It also notes wiring mistakes. None opens an incident:
 | Nobody is on a network | Left over from a removed stack, or one that is down |
 | A network is `macvlan` / `ipvlan` | Its containers are on the LAN, and the host itself cannot reach them without a shim |
 
+A Traefik started with `--providers.docker.network` (or
+`TRAEFIK_PROVIDERS_DOCKER_NETWORK`) counts as that label on every container
+that has none: they are not called ambiguous, and are warned about when they are
+not on that network. The same setting in a mounted `traefik.yml` cannot be seen,
+so there the label is still what settles it.
+
 <Screenshot name="network" alt="The Network page: which containers share a network, what the host publishes, and the internet and DNS checks." />
 
 ## Internet and DNS

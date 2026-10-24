@@ -107,6 +107,25 @@ class Report(unittest.TestCase):
             labels={"traefik.enable": "true"})])
         self.assertEqual([f["kind"] for f in result["findings"]], ["traefik_network_ambiguous"])
 
+    def test_traefiks_own_default_network_settles_it(self):
+        traefik = attrs("traefik", {"proxy": endpoint("172.20.0.2")})
+        traefik["Config"] = {"Cmd": ["--providers.docker=true",
+                                     "--providers.docker.network=proxy"]}
+        app = attrs("app", {"proxy": endpoint("172.20.0.3"), "db": endpoint("172.21.0.3")})
+        result = report([container("traefik", traefik),
+                         container("app", app, labels={"traefik.enable": "true"})])
+        self.assertEqual(result["findings"], [])
+
+    def test_traefiks_default_from_the_environment_can_be_missing(self):
+        traefik = attrs("traefik", {"proxy": endpoint("172.20.0.2")})
+        traefik["Config"] = {"Env": ["TRAEFIK_PROVIDERS_DOCKER_NETWORK=proxy"]}
+        app = attrs("app", {"a": endpoint("172.21.0.3"), "b": endpoint("172.22.0.3")})
+        result = report([container("traefik", traefik),
+                         container("app", app, labels={"traefik.enable": "true"})])
+        [finding] = result["findings"]
+        self.assertEqual(finding["kind"], "traefik_network_missing")
+        self.assertIn("providers.docker.network", finding["summary"])
+
     def test_proxied_and_published_on_every_interface(self):
         raw = attrs("app", {"proxy": endpoint("172.20.0.3")}, ports={
             "80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8081"}],
