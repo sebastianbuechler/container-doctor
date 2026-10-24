@@ -1,0 +1,2 @@
+Container Doctor: rules catch the broken container, a model explains why, and nothing gets restarted until you say so. AI triage for self-hosted Docker, one docker compose up away.
+https://sebastianbuechler.github.io/container-doctor/
