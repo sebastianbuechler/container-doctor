@@ -64,24 +64,34 @@ chart and forecast on the Storage page, named after its volume (*/data ·
 Volume 3*) when the disk arrays are read.
 
 Mount an empty folder on each other volume, read-only, and list it beside
-`/data`:
+`/data`. Create the folders first: Docker on a Synology does not create a
+missing one, and the deploy fails with *Bind mount failed: '...' does not
+exist*.
 
+```sh
+sudo mkdir -p /volume1/@container-doctor-disk /volume2/@container-doctor-disk
+```
 ```yaml
 volumes:
   - /volume3/docker/container-doctor:/data
-  - /volume1/docker/.container-doctor-disk:/disks/volume1:ro
-  - /volume2/docker/.container-doctor-disk:/disks/volume2:ro
+  - /volume1/@container-doctor-disk:/disks/volume1:ro
+  - /volume2/@container-doctor-disk:/disks/volume2:ro
 ```
 ```
 DOCTOR_DISK_PATHS=/data,/disks/volume1,/disks/volume2
 ```
 
-Docker creates a missing folder on the host when the stack starts. Never mount
-a volume's root for this: see
+On a Synology, put each folder at the volume's root with DSM's `@` prefix, as
+DSM's own `@docker` and `@appstore` are: outside every shared folder, so File
+Station, SMB clients and media scanners never list it, and moving or
+deleting a shared folder cannot take it along. On another host, any empty
+folder on the volume will do. Never mount a volume's root for this: see
 [What it can read of your host](/container-doctor/guides/security/).
 
 **A volume with no watched path** says *free space not watched* under Disk
-arrays, which names the ones left to mount. Its size and filesystem still
+arrays, with the lines to add for the ones left: the `mkdir`, the mounts and
+`DOCTOR_DISK_PATHS` as it would read with them, ready to copy on a Synology,
+where each volume's folder is `/volumeN`. Its size and filesystem still
 show; only how full it is takes the mount.
 
 **A path moved to another volume** - its data folder copied to a new pool and

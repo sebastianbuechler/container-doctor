@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- *Free space not watched* under Disk arrays gives, on a Synology, the lines
+  to add: the `mkdir`, the mounts and the whole `DOCTOR_DISK_PATHS`.
+
+### Fixed
+
+- The docs said Docker creates a missing folder for a watched volume. On a
+  Synology it does not, and the deploy fails; they now say to create it first,
+  and the example uses a folder at the volume's root (`@container-doctor-disk`)
+  rather than one in a shared folder.
+
 ## [0.4.0] - 2026-10-24
 
 ### Added
