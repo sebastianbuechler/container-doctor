@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- A watched path whose mount moved to another volume no longer charts the
+  old volume's readings as its own: the chart and the fill forecast start
+  again at the move, and a line under the chart says when.
+
+### Added
+
+- Each watched path names the volume it is on, every volume under Disk
+  arrays shows how full it is, and volumes no watched path is on are listed
+  with how to watch them (docs: *Watching every volume*).
+
 ## [0.3.0] - 2026-10-20
 
 ### Changed
