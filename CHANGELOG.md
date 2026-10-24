@@ -6,6 +6,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-24
+
 ### Added
 
 - A drive's page charts its reads and writes over 24 hours or 7 days, with
@@ -160,6 +162,7 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
 
-[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.1.0...v0.2.0
