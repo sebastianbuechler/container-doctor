@@ -521,8 +521,9 @@ class Settings:
     net_tcp_targets: list[str] = setting("DOCTOR_NET_TCP_TARGETS", ("1.1.1.1:443", "9.9.9.9:443"))
     # Resolved the way containers resolve names.
     net_dns_names: list[str] = setting("DOCTOR_NET_DNS_NAMES", ("cloudflare.com", "github.com"))
-    # DNS servers asked directly - a Pi-hole, AdGuard, the router - as ip or
-    # ip:port. Empty by default: which ones exist is the network's business.
+    # DNS servers asked directly - a Pi-hole, AdGuard, the router - as ip,
+    # ip:port or a container name on a network the doctor shares. Empty by
+    # default: which ones exist is the network's business.
     net_dns_servers: list[str] = setting("DOCTOR_NET_DNS_SERVERS", ())
     net_http_urls: list[str] = setting(
         "DOCTOR_NET_HTTP_URLS", ("https://www.cloudflare.com/cdn-cgi/trace",))

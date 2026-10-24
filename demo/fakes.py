@@ -16,15 +16,18 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from . import world
-from .world import BOXES, CORES, GIB, HOST_MEMORY, NETWORKS, Box, ago, digest, iso
+from .world import BOXES, CORES, GIB, HOST_MEMORY, LAN_ADDRESSES, NETWORKS, Box, ago, digest, iso
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 # -- Docker, as docker-py would hand it over -------------------------------------
 
-def _address(network: str, index: int) -> tuple[str, int, str]:
+def _address(network: str, index: int, name: str = "") -> tuple[str, int, str]:
     subnet = NETWORKS[network][1]
+    if NETWORKS[network][0] == "macvlan":
+        base = subnet.split("/")[0].rsplit(".", 1)[0]
+        return LAN_ADDRESSES[name], int(subnet.split("/")[1]), f"{base}.1"
     base = subnet.split("/")[0].rsplit(".", 2)[0]
     return f"{base}.0.{index + 2}", int(subnet.split("/")[1]), f"{base}.0.1"
 
@@ -34,7 +37,7 @@ def inspect(box: Box) -> dict:
     order = {b.name: i for i, b in enumerate(BOXES)}
     networks = {}
     for net in box.networks:
-        ip, prefix, gateway = _address(net, order[box.name])
+        ip, prefix, gateway = _address(net, order[box.name], box.name)
         internal = NETWORKS[net][2]
         networks[net] = {
             "NetworkID": digest(f"net:{net}")[7:], "IPAddress": ip, "IPPrefixLen": prefix,
@@ -42,6 +45,10 @@ def inspect(box: Box) -> dict:
             "DNSNames": [box.name, box.service, box.id[:12]],
         }
     ports = {spec: [{"HostIp": ip, "HostPort": port}] for spec, ip, port in box.ports}
+    # Docker binds nothing on the host for a container on macvlan alone, and
+    # lists its ports unbound.
+    lan_only = bool(box.networks) and all(NETWORKS[n][0] == "macvlan" for n in box.networks)
+    live = {spec: None for spec in ports} if lan_only else ports
     labels = {
         "com.docker.compose.project": box.stack,
         "com.docker.compose.service": box.service,
@@ -66,6 +73,7 @@ def inspect(box: Box) -> dict:
                   else "0001-01-01T00:00:00Z",
                   **({"Health": health} if health else {})},
         "Config": {"Image": box.image, "Labels": labels, "Tty": True,
+                   "ExposedPorts": {spec: {} for spec in box.exposed},
                    "Env": ["TZ=Europe/Zurich", "PUID=1000", "PGID=1000"],
                    "Cmd": None, "Entrypoint": None, "User": ""},
         "HostConfig": {"Memory": int(box.mem_limit),
@@ -73,7 +81,7 @@ def inspect(box: Box) -> dict:
                        "NetworkMode": box.networks[0] if box.networks else "bridge",
                        "PortBindings": ports, "Binds": [f"/srv/data/{box.stack}:/data"]},
         "NetworkSettings": {"Networks": networks,
-                            "Ports": ports if box.state == "running" else {}},
+                            "Ports": live if box.state == "running" else {}},
         "Mounts": [],
     }
 
@@ -143,6 +151,7 @@ class FakeAPI:
                 "Name": name, "Id": digest(f"net:{name}")[7:], "Driver": driver,
                 "Scope": "local", "Internal": internal,
                 "IPAM": {"Config": [{"Subnet": subnet}] if subnet else []},
+                "Options": {"parent": "eth0"} if driver == "macvlan" else {},
                 "Labels": ({"com.docker.compose.project": name.rsplit("_", 1)[0]}
                            if name.endswith("_default") else {}),
             })

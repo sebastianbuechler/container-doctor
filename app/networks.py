@@ -33,6 +33,7 @@ def container_network(attrs: dict[str, Any]) -> dict[str, Any]:
     """The network facts out of one container's inspect output."""
     settings = attrs.get("NetworkSettings") or {}
     host = attrs.get("HostConfig") or {}
+    config = attrs.get("Config") or {}
     name = (attrs.get("Name") or "").lstrip("/")
     attached = []
     for net_name, net in sorted((settings.get("Networks") or {}).items()):
@@ -52,8 +53,10 @@ def container_network(attrs: dict[str, Any]) -> dict[str, Any]:
     return {
         "mode": host.get("NetworkMode") or "",
         "networks": attached,
-        "ports": _ports(settings.get("Ports"), host.get("PortBindings")),
-        "traefik_default": _traefik_default_network(attrs.get("Config") or {}),
+        "ports": _ports(settings.get("Ports"), host.get("PortBindings"),
+                        (attrs.get("State") or {}).get("Running")),
+        "container_ports": _container_ports(config.get("ExposedPorts"), host.get("PortBindings")),
+        "traefik_default": _traefik_default_network(config),
     }
 
 
@@ -79,10 +82,13 @@ def _traefik_default_network(config: dict[str, Any]) -> str:
     return ""
 
 
-def _ports(live: dict | None, configured: dict | None) -> list[dict[str, Any]]:
+def _ports(live: dict | None, configured: dict | None,
+           running: bool | None = None) -> list[dict[str, Any]]:
     """Published ports. The live map is empty while a container is stopped,
-    so the configured bindings stand in for it then."""
-    source = live if any(live.values() if live else ()) else configured
+    so the configured bindings stand in for it then - but not while it runs:
+    a running container on macvlan alone has its `ports:` ignored by Docker,
+    and nothing is bound on the host."""
+    source = live if running or any(live.values() if live else ()) else configured
     out = []
     seen = set()
     for spec, bindings in (source or {}).items():
@@ -100,6 +106,18 @@ def _ports(live: dict | None, configured: dict | None) -> list[dict[str, Any]]:
             out.append({"host_ip": host_ip or "0.0.0.0", "host_port": host_port,
                         "container_port": port, "proto": proto or "tcp"})
     out.sort(key=lambda p: (_port_number(p["host_port"]), p["proto"]))
+    return out
+
+
+def _container_ports(exposed: dict | None, configured: dict | None) -> list[dict[str, str]]:
+    """The ports the container itself says it listens on: its image's EXPOSE,
+    compose's expose: and the inside half of ports:. What a container with an
+    address of its own on the LAN answers on there - as far as Docker knows."""
+    out = []
+    for spec in sorted({*(exposed or {}), *(configured or {})},
+                       key=lambda s: (_port_number(s.partition("/")[0]), s)):
+        port, _, proto = spec.partition("/")
+        out.append({"port": port, "proto": proto or "tcp"})
     return out
 
 
@@ -138,6 +156,7 @@ def report(containers: list[dict[str, Any]],
     isolated: list[str] = []
     shared: list[dict[str, str]] = []
     exposed: list[dict[str, Any]] = []
+    own_ports: dict[str, list[dict[str, str]]] = {}
     findings: list[dict[str, Any]] = []
     multi_homed = 0
     # Traefik's own default for containers without traefik.docker.network.
@@ -179,6 +198,7 @@ def report(containers: list[dict[str, Any]],
                     n["internal"] = False
                 n["members"].append({**member, "ip": entry["ip"], "aliases": entry["aliases"]})
 
+        own_ports[name] = net.get("container_ports") or []
         ports = net.get("ports") or []
         if ports:
             exposed.append({**member, "ports": ports})
@@ -205,6 +225,7 @@ def report(containers: list[dict[str, Any]],
     # the per-stack ones by name.
     out_networks.sort(key=lambda n: (-len(n["stacks"]), -len(n["members"]), n["name"]))
 
+    lan = _lan(out_networks, own_ports)
     findings.extend(_overlaps(out_networks))
     findings.extend(_network_findings(out_networks))
     findings.sort(key=lambda f: (_SEVERITY_RANK[f["severity"]], f.get("container", ""), f["kind"]))
@@ -219,6 +240,9 @@ def report(containers: list[dict[str, Any]],
         "isolated": isolated,
         "shared_stack": shared,
         "exposed": exposed,
+        # Containers with an address of their own on the LAN: reached there
+        # directly, with nothing published on the host.
+        "lan": lan,
         "findings": findings,
         "dismissed": set_aside,
         # Whether drivers, flags and unused networks are Docker's word or
@@ -228,6 +252,7 @@ def report(containers: list[dict[str, Any]],
             "networks": len(out_networks),
             "multi_homed": multi_homed,
             "published_ports": sum(len(e["ports"]) for e in exposed),
+            "lan_addresses": len(lan),
             "host_mode": len(host_mode),
             "unused": sum(1 for n in out_networks
                           if _unused(n, _templates_in_use(out_networks))),
@@ -277,6 +302,33 @@ def _merge_inventory(networks: dict[str, dict[str, Any]],
             "config_from": (raw.get("ConfigFrom") or {}).get("Network", ""),
         })
         n["subnet"] = next((s for s in subnets if ":" not in s), "") or n["subnet"]
+
+
+_LAN_DRIVERS = ("macvlan", "ipvlan")
+
+
+def _lan(networks: list[dict[str, Any]],
+         own_ports: dict[str, list[dict[str, str]]]) -> list[dict[str, Any]]:
+    """Every member of a macvlan or ipvlan network, at its LAN address. Only
+    Docker's network list names the driver, so none without it."""
+    out = []
+    for n in networks:
+        if n.get("driver") not in _LAN_DRIVERS:
+            continue
+        for m in n["members"]:
+            out.append({"name": m["name"], "state": m["state"], "health": m["health"],
+                        "network": n["name"], "driver": n["driver"], "ip": m["ip"],
+                        "ports": own_ports.get(m["name"], [])})
+    out.sort(key=lambda e: (_ip_key(e["ip"]), e["name"]))
+    return out
+
+
+def _ip_key(ip: str) -> tuple[int, int]:
+    try:
+        address = ipaddress.ip_address(ip)
+    except ValueError:
+        return (9, 0)
+    return (address.version, int(address))
 
 
 def _unused(n: dict[str, Any], templates_in_use: set[str]) -> bool:

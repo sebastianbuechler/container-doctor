@@ -7,9 +7,11 @@ import unittest
 from app.networks import container_network, report
 
 
-def attrs(name, networks=None, mode="", ports=None, bindings=None):
+def attrs(name, networks=None, mode="", ports=None, bindings=None, running=None, exposed=()):
     return {
         "Name": f"/{name}",
+        **({"State": {"Running": running}} if running is not None else {}),
+        "Config": {"ExposedPorts": {spec: {} for spec in exposed}},
         "HostConfig": {"NetworkMode": mode or next(iter(networks or {}), "bridge"),
                        "PortBindings": bindings or {}},
         "NetworkSettings": {"Networks": networks or {}, "Ports": ports or {}},
@@ -54,6 +56,22 @@ class ContainerNetwork(unittest.TestCase):
             "53/udp": [{"HostIp": "", "HostPort": "53"}]}))
         self.assertEqual(net["ports"][0]["host_port"], "53")
         self.assertEqual(net["ports"][0]["proto"], "udp")
+
+    def test_a_running_container_with_nothing_bound_publishes_nothing(self):
+        # On macvlan alone Docker ignores ports: - the live map lists the port
+        # unbound, and the configured binding must not stand in for it.
+        net = container_network(attrs("npm", {"lan": endpoint("192.168.1.5", prefix=24)},
+                                      running=True, ports={"81/tcp": None}, bindings={
+                                          "81/tcp": [{"HostIp": "", "HostPort": "81"}]}))
+        self.assertEqual(net["ports"], [])
+
+    def test_container_ports_join_expose_and_the_inside_of_ports(self):
+        net = container_network(attrs("pihole", {}, mode="lan", exposed=(
+            "80/tcp", "53/udp", "53/tcp", "443/tcp"), bindings={
+                "8080/tcp": [{"HostIp": "", "HostPort": "80"}]}))
+        self.assertEqual([(p["port"], p["proto"]) for p in net["container_ports"]],
+                         [("53", "tcp"), ("53", "udp"), ("80", "tcp"), ("443", "tcp"),
+                          ("8080", "tcp")])
 
 
 class Report(unittest.TestCase):
@@ -212,6 +230,26 @@ class Inventory(unittest.TestCase):
         self.assertEqual(result["summary"]["warnings"], 1)
         [aside] = result["dismissed"]
         self.assertEqual((aside["key"], aside["dismissed_by"]), ("published_and_proxied:app", "admin"))
+
+    def test_lan_addresses_are_listed_with_their_ports(self):
+        lan = {"lan": endpoint("192.168.1.53", gateway="192.168.1.1", prefix=24)}
+        result = report([
+            container("pihole", attrs("pihole", lan, running=True, exposed=("53/udp", "80/tcp"))),
+            container("traefik", attrs("traefik", {
+                "lan": endpoint("192.168.1.10", gateway="192.168.1.1", prefix=24),
+                "proxy": endpoint("172.20.0.2")}, running=True, exposed=("80/tcp",))),
+            container("app", attrs("app", {"proxy": endpoint("172.20.0.3")}, running=True)),
+        ], [listed("lan", driver="macvlan", subnet="192.168.1.0/24"), listed("proxy")])
+        self.assertEqual([(e["name"], e["ip"], e["network"]) for e in result["lan"]],
+                         [("traefik", "192.168.1.10", "lan"), ("pihole", "192.168.1.53", "lan")])
+        self.assertEqual([p["port"] for p in result["lan"][1]["ports"]], ["53", "80"])
+        self.assertEqual(result["summary"]["lan_addresses"], 2)
+        self.assertEqual(result["summary"]["published_ports"], 0)
+
+    def test_without_the_inventory_no_lan_addresses_are_guessed(self):
+        result = report([container("pihole", attrs("pihole", {
+            "lan": endpoint("192.168.1.53", gateway="192.168.1.1", prefix=24)}))])
+        self.assertEqual(result["lan"], [])
 
     def test_icc_off_is_read_from_the_options(self):
         result = report([], [listed("quiet", Options={

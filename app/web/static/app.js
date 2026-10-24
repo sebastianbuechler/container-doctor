@@ -457,7 +457,11 @@ const INFO = {
     <p><strong>Every interface</strong> means anything that can reach the host can reach the
     container directly - for a service behind Traefik that skips its TLS and sign-in.</p>
     <p>Bind to <code>127.0.0.1</code>, or drop the <code>ports:</code> entry, when the proxy
-    is the only way in that should exist.</p>`,
+    is the only way in that should exist.</p>
+    <p><strong>On the LAN directly</strong>: containers on a macvlan or ipvlan network have
+    an address of their own and are reached there, with nothing bound on the host. Their
+    ports are what the image and compose declare - Docker cannot see what really listens.
+    The host itself cannot reach these addresses without a macvlan shim.</p>`,
 };
 
 // Hover and keyboard focus, handled in CSS: no open/close state to get out of
@@ -3032,13 +3036,17 @@ function renderNetwork() {
 }
 
 function renderPorts() {
-  const exposed = (state.network || {}).exposed || [];
+  const report = state.network || {};
+  const exposed = report.exposed || [];
+  const lan = report.lan || [];
   const rows = exposed.flatMap((e) => e.ports.map((p) => ({ ...p, name: e.name, state: e.state, health: e.health })))
     .sort((a, b) => Number(a.host_port) - Number(b.host_port) || a.proto.localeCompare(b.proto));
   const wide = rows.filter((r) => ["0.0.0.0", "::"].includes(r.host_ip)).length;
-  $("ports-sub").textContent = rows.length
-    ? `${rows.length} on the host · ${wide} on every interface` : "";
-  $("network-ports").innerHTML = rows.length ? `
+  $("ports-sub").textContent = [
+    ...(rows.length ? [`${rows.length} on the host · ${wide} on every interface`] : []),
+    ...(lan.length ? [`${lan.length} with a LAN address of their own`] : []),
+  ].join(" · ");
+  const published = rows.length ? `
     <div class="net-matrix-wrap"><table class="net-ports">
       <thead><tr><th scope="col">Host port</th><th scope="col">Container</th><th scope="col">Inside</th><th scope="col">Listens on</th></tr></thead>
       <tbody>${rows.map((r) => {
@@ -3050,7 +3058,20 @@ function renderPorts() {
           <td>${everywhere ? "every interface" : `<code>${esc(r.host_ip)}</code>`}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`
-    : `<p class="empty">Nothing is published on the host - everything is reached through a network.</p>`;
+    : `<p class="empty">Nothing is published on the host - ${lan.length
+      ? "the containers below are reached at their own LAN address" : "everything is reached through a network"}.</p>`;
+  const own = lan.length ? `
+    <h3 class="net-ports-head">On the LAN directly</h3>
+    <div class="net-matrix-wrap"><table class="net-ports">
+      <thead><tr><th scope="col">Address</th><th scope="col">Container</th><th scope="col">Network</th><th scope="col">Ports, from the image</th></tr></thead>
+      <tbody>${lan.map((r) => `<tr>
+          <td><code>${esc(r.ip || "-")}</code></td>
+          <td><span class="net-dot" data-level="${memberLevel(r)}"></span><a href="#container/${encodeURIComponent(r.name)}">${esc(r.name)}</a></td>
+          <td>${esc(r.network)} <span class="muted">${esc(r.driver)}</span></td>
+          <td>${r.ports.length ? r.ports.map((p) => `<code>${esc(p.port)}</code><span class="muted">/${esc(p.proto)}</span>`).join(", ")
+            : `<span class="muted">none declared</span>`}</td>
+        </tr>`).join("")}</tbody></table></div>` : "";
+  $("network-ports").innerHTML = published + own;
 }
 
 // Pointing at a container or a network lights it up everywhere it appears:
