@@ -138,6 +138,18 @@ CREATE TABLE IF NOT EXISTS drive_temps (
     PRIMARY KEY (drive, bucket)
 );
 
+-- Whether each hard disk was asleep, per bucket: how many reads of the SMART
+-- sidecar fell in it and how many of those found the drive in standby. Asking
+-- does not wake a drive, so this costs it nothing. Keyed like drive_temps.
+CREATE TABLE IF NOT EXISTS drive_sleep (
+    drive  TEXT NOT NULL,
+    bucket TEXT NOT NULL,
+    at     TEXT NOT NULL,
+    polls  INTEGER NOT NULL,
+    asleep INTEGER NOT NULL,
+    PRIMARY KEY (drive, bucket)
+);
+
 -- The dashboard briefing, one row per section plus "overall", each with the
 -- fingerprint of the facts it was written from. Kept in SQLite so a restart
 -- does not pay to rewrite words that are still true.
@@ -1010,6 +1022,30 @@ class Store:
             ).fetchall()
         return [dict(row) for row in rows]
 
+    def record_drive_sleep(self, states: dict[str, bool], *, bucket_minutes: int = 5) -> None:
+        """Count one read of each drive into its bucket, and whether it was asleep."""
+        if not states:
+            return
+        now = datetime.now(timezone.utc)
+        bucket, at = _bucket(now, bucket_minutes), now.isoformat(timespec="seconds")
+        with self._lock:
+            self._conn.executemany(
+                """INSERT INTO drive_sleep (drive, bucket, at, polls, asleep) VALUES (?,?,?,1,?)
+                   ON CONFLICT(drive, bucket) DO UPDATE SET
+                     polls = polls + 1, asleep = asleep + excluded.asleep, at = excluded.at""",
+                [(drive, bucket, at, int(asleep)) for drive, asleep in states.items()],
+            )
+            self._conn.commit()
+
+    def drive_sleep_history(self, drive: str, since: datetime) -> list[dict[str, Any]]:
+        """Each bucket's start (UTC), its reads and how many found the drive asleep."""
+        with self._read() as conn:
+            rows = conn.execute(
+                "SELECT bucket, polls, asleep FROM drive_sleep WHERE drive=? AND at >= ? ORDER BY bucket",
+                (drive, since.isoformat(timespec="seconds")),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     def host_state(self, key: str) -> str | None:
         with self._read() as conn:
             row = conn.execute("SELECT value FROM host_state WHERE key=?", (key,)).fetchone()
@@ -1828,6 +1864,7 @@ class Store:
             self._conn.execute("DELETE FROM host_samples WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM drive_errors WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM drive_temps WHERE at < ?", (cutoff,))
+            self._conn.execute("DELETE FROM drive_sleep WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM container_changes WHERE at < ?", (cutoff,))
             self._conn.execute("DELETE FROM mem_samples WHERE bucket < ?", (cutoff,))
             self._conn.execute("DELETE FROM classifications WHERE at < ?", (cutoff,))

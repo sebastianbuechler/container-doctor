@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
 from collections import deque
 from datetime import datetime, timedelta, timezone
@@ -141,6 +142,8 @@ class Supervisor:
         self._smart_read_at = 0.0
         # Drive incident fingerprint -> the summary it last fired with.
         self._smart_said: dict[str, str] = {}
+        # Device -> who the drive in it was when last read awake.
+        self._drive_ids: dict[str, dict[str, Any]] = {}
 
         self.briefing = briefing.Briefing(
             store=self.store,
@@ -965,6 +968,7 @@ class Supervisor:
             self.smart = {"drives": [], "error": f"{exc.__class__.__name__}: {exc}"[:200],
                           "checked_at": utcnow()}
             return []
+        await self._recall_drives(drives)
         signals = []
         for drive in drives:
             key = f"smart_crc:{drive['serial'] or drive['device']}"
@@ -993,8 +997,35 @@ class Supervisor:
                                     bucket_minutes=self.settings.host_sample_minutes)
         except Exception:
             log.exception("could not record drive temperatures")
+        sleep = {drive_key(d): d["asleep"] for d in drives if smart.can_sleep(d)}
+        try:
+            await asyncio.to_thread(self.store.record_drive_sleep, sleep,
+                                    bucket_minutes=self.settings.host_sample_minutes)
+        except Exception:
+            log.exception("could not record drive sleep")
         await self._resolve_healthy_drives(drives)
         return signals
+
+    async def _recall_drives(self, drives: list[dict[str, Any]]) -> None:
+        """A drive in standby answers with nothing but that. Fill in who it is
+        from its last reading awake - kept across restarts - so it keeps its
+        name and model, and its history stays filed under its serial."""
+        for d in drives:
+            key = f"smart_id:{d['device']}"
+            if d["serial"]:
+                known = {k: d.get(k) for k in smart.IDENTITY}
+                if self._drive_ids.get(d["device"]) != known:
+                    self._drive_ids[d["device"]] = known
+                    await asyncio.to_thread(self.store.set_host_state, key, json.dumps(known))
+            elif d["asleep"]:
+                if d["device"] not in self._drive_ids:
+                    stored = await asyncio.to_thread(self.store.host_state, key)
+                    try:
+                        self._drive_ids[d["device"]] = json.loads(stored) if stored else {}
+                    except ValueError:
+                        self._drive_ids[d["device"]] = {}
+                d.update({k: v for k, v in self._drive_ids[d["device"]].items()
+                          if k in smart.IDENTITY and v not in (None, "")})
 
     async def _resolve_healthy_drives(self, drives: list[dict[str, Any]]) -> None:
         """Close a drive's incident once nothing is wrong with it any more -
@@ -1070,6 +1101,33 @@ class Supervisor:
             "samples": [[row["at"], row["celsius"]]
                         for row in self.store.drive_temp_history(drive, since)],
             "step_minutes": self.settings.host_sample_minutes,
+        }
+
+    def drive_sleep_history(self, drive: str, hours: int) -> dict[str, Any]:
+        """Each bucket's share of reads that found the drive asleep, and over
+        the range: how much of the time it slept and how often it woke. A
+        bucket counts as asleep when most of its reads were; a wake is an
+        awake bucket right after an asleep one, so a gap - the doctor down -
+        is never counted as one."""
+        since = datetime.now(timezone.utc) - timedelta(hours=hours)
+        step = timedelta(minutes=self.settings.host_sample_minutes)
+        samples, slept, wakes = [], 0, 0
+        before: tuple[datetime, bool] | None = None
+        for row in self.store.drive_sleep_history(drive, since):
+            start = datetime.fromisoformat(row["bucket"]).replace(tzinfo=timezone.utc)
+            share = row["asleep"] / row["polls"] if row["polls"] else 0.0
+            asleep = share > 0.5
+            if before and before[1] and not asleep and start - before[0] <= step:
+                wakes += 1
+            slept += asleep
+            before = (start, asleep)
+            samples.append([start.isoformat(timespec="seconds"), round(share, 2)])
+        return {
+            "drive": drive,
+            "samples": samples,
+            "step_minutes": self.settings.host_sample_minutes,
+            "asleep_pct": round(slept / len(samples) * 100) if samples else None,
+            "wakes": wakes,
         }
 
     async def _resolve_recovered_arrays(self, arrays: list[dict[str, Any]]) -> None:

@@ -77,6 +77,7 @@ const state = {
   hostHours: 24,
   driveTempHours: 24,
   driveTemps: null,
+  driveSleep: null,
   hostHistory: null,
   hostHistoryAt: 0,
   view: "overview",
@@ -445,8 +446,9 @@ const INFO = {
       <li><strong>NVMe</strong>: the controller's critical warning, media errors, wear and
         spare capacity.</li>
     </ul>
-    <p>Read every five minutes. A drive asleep is not woken; it shows as asleep. A drive's
-    incident closes once nothing is wrong with it any more.</p>`,
+    <p>Read every five minutes. A drive asleep is not woken; it shows as asleep, and a hard
+    disk's own page shows how much it slept and how often it woke. A drive's incident closes
+    once nothing is wrong with it any more.</p>`,
   ports: `<p>Ports bound on the host itself.</p>
     <p><strong>Every interface</strong> means anything that can reach the host can reach the
     container directly - for a service behind Traefik that skips its TLS and sign-in.</p>
@@ -1918,8 +1920,10 @@ function renderDisk() {
 function openDrive(key) {
   state.driveKey = key;
   state.driveTemps = null;
+  state.driveSleep = null;
   renderDrive();
   refreshDriveTemps();
+  refreshDriveSleep();
   const dialog = $("drive");
   if (!dialog.open) dialog.showModal();
 }
@@ -1998,11 +2002,14 @@ function renderDrive() {
       <div class="segmented" role="radiogroup" aria-label="Temperature range">${[[24, "24 hours"], [168, "7 days"]].map(([h, words]) =>
         `<button type="button" role="radio" data-drive-hours="${h}" aria-checked="${state.driveTempHours === h}">${words}</button>`).join("")}
       </div></div><div class="chart" data-chart="drive-temp"></div></section>` : ""}
+    ${smart && canSleep(smart) ? `<section class="detail-section"><h3>Sleep</h3>
+      <p class="muted" data-sleep-summary></p><div data-chart="drive-sleep"></div></section>` : ""}
     <section class="detail-section"><h3>Arrays on this drive</h3><ul class="detail-list">${arrays}</ul>
       ${anyErrors ? `<p class="muted">Read errors md has corrected on this drive, counted since each array was last
       assembled. That happens on every reboot, so a count back at 0 does not mean the drive got better: the
       warning above keeps the tally across restarts.</p>` : ""}</section>`;
   drawDriveTemps();
+  drawDriveSleep();
 }
 
 function driveHistoryKey(smart) {
@@ -2048,6 +2055,75 @@ function drawDriveTemps() {
     format: celsiusFormat, label: `Temperature of ${entry.label}`,
     refs: [{ value: alert, label: "alert", kind: "warning" }],
     empty: "The chart fills in as the doctor reads SMART - a few minutes per point." });
+}
+
+// A hard disk, asleep or not: SSDs and NVMe drives never spin down.
+function canSleep(smart) {
+  return Boolean(smart.asleep || smart.rotation_rpm > 0);
+}
+
+async function refreshDriveSleep() {
+  const entry = driveEntries((state.snapshot.raid || {}).arrays || []).find((e) => e.key === state.driveKey);
+  const smart = entry && smartFor(entry);
+  const key = driveHistoryKey(smart);
+  if (!key || !canSleep(smart)) return;
+  const hours = state.driveTempHours;
+  try {
+    const history = await api(`/api/drive/sleep?drive=${encodeURIComponent(key)}&hours=${hours}`);
+    if (driveHistoryKey(smartFor(entry)) !== key || state.driveTempHours !== hours) return;
+    state.driveSleep = { ...history, hours };
+  } catch (_) {
+    if (state.driveTempHours !== hours) return;
+    state.driveSleep = { drive: key, hours, samples: [], asleep_pct: null, wakes: 0, step_minutes: 5 };
+  }
+  drawDriveSleep();
+}
+
+// One bar over the chosen range: asleep, awake, and blank where there was no
+// reading. Buckets in a row with the same state are drawn as one stretch.
+function drawDriveSleep() {
+  const host = document.querySelector('#drive-body [data-chart="drive-sleep"]');
+  const summary = document.querySelector("#drive-body [data-sleep-summary]");
+  if (!host || !summary) return;
+  const entry = driveEntries((state.snapshot.raid || {}).arrays || []).find((e) => e.key === state.driveKey);
+  const smart = entry && smartFor(entry);
+  const history = state.driveSleep;
+  if (!history || history.drive !== driveHistoryKey(smart) || history.hours !== state.driveTempHours) {
+    summary.textContent = "";
+    host.innerHTML = `<p class="chart-empty">Loading…</p>`;
+    return;
+  }
+  const range = history.hours === 168 ? "7 days" : `${history.hours} hours`;
+  if (history.asleep_pct === null || history.asleep_pct === undefined) {
+    summary.textContent = "";
+    host.innerHTML = `<p class="chart-empty">No readings in the last ${esc(range)} yet. The bar fills in as
+      the doctor reads SMART - a point every few minutes.</p>`;
+    return;
+  }
+  const wakes = history.wakes === 1 ? "woke once" : `woke ${history.wakes} times`;
+  summary.textContent = `Asleep ${history.asleep_pct}% of the last ${range} · ${wakes}`;
+  const step = (history.step_minutes || 5) * 60000;
+  const x1 = Date.now();
+  const x0 = x1 - history.hours * 3600000;
+  const stretches = [];
+  for (const [at, share] of history.samples) {
+    const start = new Date(at).getTime();
+    const asleep = share > 0.5;
+    const last = stretches[stretches.length - 1];
+    if (last && last.asleep === asleep && start - last.end <= 1000) last.end = start + step;
+    else stretches.push({ start, end: start + step, asleep });
+  }
+  const pct = (t) => (Math.min(x1, Math.max(x0, t)) - x0) / (x1 - x0) * 100;
+  const when = (t) => new Date(t).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  const bars = stretches.filter((s) => s.end > x0).map((s) => `<i data-state="${s.asleep ? "asleep" : "awake"}"
+      style="left:${pct(s.start).toFixed(2)}%;width:${Math.max(0.2, pct(s.end) - pct(s.start)).toFixed(2)}%"
+      title="${esc(`${s.asleep ? "Asleep" : "Awake"} ${when(s.start)} - ${when(Math.min(s.end, x1))}`)}"></i>`).join("");
+  const span = x1 - x0;
+  host.innerHTML = `<div class="sleep-bar" role="img" aria-label="${esc(`${entry.label}: ${summary.textContent}`)}">${bars}</div>
+    <div class="sleep-axis" aria-hidden="true"><span>${esc(shortTime(x0, span))}</span>
+      <span>${esc(shortTime(x0 + span / 2, span))}</span><span>now</span></div>
+    <div class="sleep-key" aria-hidden="true"><span><i data-state="asleep"></i>asleep</span>
+      <span><i data-state="awake"></i>awake</span><span><i></i>no reading</span></div>`;
 }
 
 // --- drive health (SMART) ------------------------------------------------------------
@@ -2097,6 +2173,7 @@ function driveLifetime(d) {
     ["Reported uncorrectable", count(c.Reported_Uncorrect)],
     ["CRC errors", count(d.crc_errors)],
     ["Head parks", d.rotation_rpm ? count(d.load_cycles) : null],
+    ["Spin-ups", d.rotation_rpm ? count(d.spin_ups) : null],
     ["Errors logged", count(d.error_log)],
     ["Failed self-tests", count(d.self_test_errors)],
   ];
@@ -5323,6 +5400,7 @@ document.addEventListener("click", (event) => {
     document.querySelectorAll("[data-drive-hours]").forEach((b) =>
       b.setAttribute("aria-checked", String(b === driveHours)));
     refreshDriveTemps();
+    refreshDriveSleep();
     return;
   }
   const hostHours = event.target.closest("[data-host-hours]");

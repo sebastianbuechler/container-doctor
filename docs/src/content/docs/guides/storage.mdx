@@ -72,8 +72,8 @@ history never keeps a disk from spinning down.
 
 Select a drive on the Storage page for everything else SMART says about it:
 model, serial and firmware, whether it is an SSD or how fast it spins, its
-link speed, power-on time and power cycles, how much it has written and read
-over its life, the share of an SSD's rated endurance used, and each counter on
+link speed, power-on time and power cycles, how often a hard disk has spun up,
+how much it has written and read over its life, the share of an SSD's rated endurance used, and each counter on
 its own - reallocated, pending and uncorrectable sectors, CRC errors, head
 parks, the errors it logged itself and failed self-tests - a 0 included.
 A SATA drive reports its lifetime writes in a vendor attribute whose name
@@ -123,6 +123,30 @@ smartctl's guess reads only its identity: no verdict, no counters, a
 temperature of 0. A Seagate (`ST6000VN001-...`, no space) comes through as
 vendor "ATA" and is guessed right. A drive read that way shows *no data* on
 the Storage page, never *healthy*.
+
+### Drive sleep
+
+A hard disk's page also shows whether it has been sleeping: how much of the
+last 24 hours or 7 days it spent in standby, how often it woke, and a bar of
+when. That answers "do my disks spin down at all, and what keeps waking them?"
+without digging through the NAS's own logs.
+
+<Screenshot name="drive" alt="A hard disk's page: its temperature over the last day, and a bar of when it slept, with how often it woke." />
+
+It costs the drives nothing. The sidecar asks a drive whether it is in standby
+before it reads anything, and asking does not spin it up. Each reading is kept
+per five minutes (`DOCTOR_HOST_SAMPLE_MINUTES`), which catches every wake: a
+drive that wakes stays up for at least the NAS's idle timeout, 10 minutes or
+more on Synology. A wake is counted only when the drive was seen asleep and
+then awake in the next slot, so a gap in the readings - the doctor down - is
+never one. The bar shows when, not why: what woke a disk is the NAS's to say.
+On Synology, Support Center's hibernation debugging mode names the process.
+
+Asleep, a drive tells smartctl nothing about itself, not even its serial. The
+doctor remembers each drive from its last reading awake - across restarts too -
+so a sleeping drive keeps its name and model on the Storage page and its history
+stays filed under its serial. SSDs and NVMe drives never spin down and have no
+sleep section.
 
 ## When a disk drops out of the array
 
