@@ -147,6 +147,10 @@ class RediagnoseRequest(BaseModel):
     context: str = Field(default="", max_length=8000)
 
 
+class FindingKey(BaseModel):
+    key: str = Field(min_length=1, max_length=500)
+
+
 class RedeployRequest(BaseModel):
     container: str = Field(min_length=1, max_length=128)
 
@@ -835,6 +839,21 @@ def build_app(supervisor: Supervisor, settings: Settings,
     @app.get("/api/networks")
     async def network_map(_: str = Depends(identify)) -> dict[str, Any]:
         return await asyncio.to_thread(supervisor.network_report)
+
+    @app.post("/api/networks/findings/dismiss")
+    async def dismiss_finding(body: FindingKey, user: str = Depends(require_writer)) -> dict[str, Any]:
+        """Set a network note aside as meant. Kept by key, so it stays
+        dismissed from poll to poll until restored."""
+        await asyncio.to_thread(supervisor.store.dismiss_finding, body.key, user)
+        log.info("%s dismissed the network note %s", user, body.key)
+        return {"ok": True}
+
+    @app.post("/api/networks/findings/restore")
+    async def restore_finding(body: FindingKey, user: str = Depends(require_writer)) -> dict[str, Any]:
+        if not await asyncio.to_thread(supervisor.store.restore_finding, body.key):
+            raise HTTPException(status_code=404, detail="that note is not dismissed")
+        log.info("%s restored the network note %s", user, body.key)
+        return {"ok": True}
 
     @app.get("/api/incidents")
     async def incidents(

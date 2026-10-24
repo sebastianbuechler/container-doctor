@@ -10,7 +10,9 @@ show, and `internal` is inferred from containers on it getting no gateway.
 Nothing here opens an incident. The findings are wiring mistakes that cost an
 evening to spot by hand - Traefik pointed at a network the container is not
 on, a service published on every interface as well as behind the proxy - and
-they are shown, not acted on.
+they are shown, not acted on. One that is meant can be dismissed: each has a
+`key` that stays the same from poll to poll, and dismissed ones are listed
+apart, out of the count.
 """
 
 from __future__ import annotations
@@ -122,11 +124,14 @@ def _subnet(ip: str, prefix: int) -> str:
 
 
 def report(containers: list[dict[str, Any]],
-           inventory: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+           inventory: list[dict[str, Any]] | None = None,
+           dismissed: dict[str, dict[str, Any]] | None = None) -> dict[str, Any]:
     """Networks, members and findings for the dashboard, from the last poll.
 
     `inventory` is Docker's own network list, or None when it could not be
     read - then everything is worked out from the containers alone.
+    `dismissed` maps a finding's key to who dismissed it and when; those
+    findings move to their own list.
     """
     networks: dict[str, dict[str, Any]] = {}
     host_mode: list[str] = []
@@ -203,6 +208,11 @@ def report(containers: list[dict[str, Any]],
     findings.extend(_overlaps(out_networks))
     findings.extend(_network_findings(out_networks))
     findings.sort(key=lambda f: (_SEVERITY_RANK[f["severity"]], f.get("container", ""), f["kind"]))
+    for f in findings:
+        f["key"] = f"{f['kind']}:{f['container'] or f.pop('subject', '')}"
+    dismissed = dismissed or {}
+    set_aside = [{**f, **dismissed[f["key"]]} for f in findings if f["key"] in dismissed]
+    findings = [f for f in findings if f["key"] not in dismissed]
     return {
         "networks": out_networks,
         "host_mode": host_mode,
@@ -210,6 +220,7 @@ def report(containers: list[dict[str, Any]],
         "shared_stack": shared,
         "exposed": exposed,
         "findings": findings,
+        "dismissed": set_aside,
         # Whether drivers, flags and unused networks are Docker's word or
         # missing, for the page to say which.
         "inventory": inventory is not None,
@@ -285,16 +296,10 @@ def _network_findings(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         name = n["name"]
         if _unused(n, in_use):
             origin = f" (from stack {n['project']})" if n.get("project") else ""
-            out.append({"kind": "unused_network", "severity": "info", "container": "",
+            out.append({"kind": "unused_network", "severity": "info", "container": "", "subject": name,
                         "summary": f"Nobody is on {name}{origin}. Left over from a removed "
                                    "stack, or for one that is down - docker network rm "
                                    "clears it if it is not coming back."})
-        if n.get("driver") in ("macvlan", "ipvlan"):
-            via = f" on {n['parent']}" if n.get("parent") else ""
-            out.append({"kind": "lan_network", "severity": "info", "container": "",
-                        "summary": f"{name} is {n['driver']}{via}: its containers have "
-                                   "addresses of their own on the LAN, and the host itself "
-                                   "cannot reach them without a macvlan shim."})
     return out
 
 
@@ -367,5 +372,6 @@ def _overlaps(networks: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for b, net_b in parsed[i + 1:]:
             if a != b and net_a.version == net_b.version and net_a.overlaps(net_b):
                 out.append({"kind": "subnet_overlap", "severity": "warning", "container": "",
+                            "subject": f"{a}|{b}",
                             "summary": f"{a} ({net_a}) and {b} ({net_b}) overlap."})
     return out

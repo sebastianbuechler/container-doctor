@@ -6,6 +6,18 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A network note that is meant can be dismissed. It moves under *dismissed*,
+  saying who and when, stops counting towards the page's warnings, and stays
+  dismissed from poll to poll until restored.
+
+### Changed
+
+- A `macvlan` or `ipvlan` network is explained on its card on the Network
+  page - its parent interface, and that the host cannot reach its containers
+  without a shim - rather than as a note in the list above.
+
 ## [0.4.1] - 2026-10-24
 
 ### Changed
