@@ -433,6 +433,8 @@ main {
 .disk-row { display: grid; gap: 4px; }
 .disk-row .label { display: flex; justify-content: space-between; gap: 4px 12px; flex-wrap: wrap; font-size: 13px; }
 .disk-row .label code { word-break: break-all; }
+.disk-row .disk-volume { font-size: 12px; margin-left: 6px; }
+.disk-moved { margin: 0; font-size: 12.5px; }
 .disk-row .label code { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
 .disk-row .label span:last-child { font-variant-numeric: tabular-nums; color: var(--ink-2); }
 
@@ -2407,7 +2409,8 @@ main {
 }
 [data-density="compact"] .disk-row .meter { margin: 0; }
 [data-density="compact"] .disk-row .chart,
-[data-density="compact"] .disk-row .disk-table { display: none; }
+[data-density="compact"] .disk-row .disk-table,
+[data-density="compact"] .disk-row .disk-moved { display: none; }
 [data-density="compact"] .array-list { gap: 6px; }
 
 @media (max-width: 560px) {

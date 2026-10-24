@@ -242,7 +242,7 @@ Log lines to never count, host-wide. Prefer the per-container label `doctor.igno
 
 ### DOCTOR_DISK_PATHS
 
-Free space is a property of the filesystem, so /data reports all of the volume it lives on without mounting it. To watch a second volume, mount a small directory on it read-only (never the volume root) and add it here.
+Free space is a property of the filesystem, so /data reports all of the volume it lives on without mounting it. To watch another volume, mount an empty directory on it read-only (never the volume root) and add it here: one path per volume, each with its own forecast.
 
 **Default:** `none` · **Type:** comma-separated list
 

@@ -662,7 +662,6 @@ class Supervisor:
         business holding up the event loop, small as they are.
         """
         window = timedelta(days=self.settings.disk_trend_window_days)
-        since = datetime.now(timezone.utc) - window
         for usage in usages:
             path = usage["path"]
             try:
@@ -670,7 +669,9 @@ class Supervisor:
                     path, usage["used_bytes"], usage["total_bytes"],
                     free_bytes=usage["free_bytes"],
                     bucket_minutes=self.settings.disk_sample_minutes,
+                    fs_id=usage.get("fs_id"),
                 )
+                since, _ = self._disk_since(usage, window)
                 # Full means no free space left, the way the percentage counts
                 # it - not the filesystem total, which includes the blocks
                 # reserved for root that no container can fill.
@@ -693,6 +694,15 @@ class Supervisor:
                 # A missing trend costs a forecast, never a poll.
                 log.exception("could not update the disk trend for %s", path)
                 usage["trend"] = None
+
+    def _disk_since(self, usage: dict[str, Any], window: timedelta) -> tuple[datetime, datetime | None]:
+        """Where a path's history starts: `window` ago, or just after its last
+        reading on another filesystem, if that came later - and when that was."""
+        since = datetime.now(timezone.utc) - window
+        moved = self.store.disk_moved_at(usage["path"], usage.get("fs_id"), usage["total_bytes"])
+        if moved is not None and moved >= since:
+            return moved + timedelta(seconds=1), moved
+        return since, None
 
     def _record_history(self, snapshots: dict[str, dict[str, Any]]) -> None:
         now = datetime.now(timezone.utc)
@@ -2590,9 +2600,9 @@ class Supervisor:
 
     def disk_history(self, days: int) -> list[dict[str, Any]]:
         """Each watched path's samples, for the forecast chart."""
-        since = datetime.now(timezone.utc) - timedelta(days=days)
         out = []
         for usage in self.disk:
+            since, moved = self._disk_since(usage, timedelta(days=days))
             samples = self.store.disk_history(usage["path"], since)
             # Capacity as the percentage counts it, used + free, at the time of
             # each sample: a volume that grew would otherwise read as fuller
@@ -2607,6 +2617,8 @@ class Supervisor:
                 "used_bytes": usage["used_bytes"],
                 "free_bytes": usage["free_bytes"],
                 "trend": usage.get("trend"),
+                # The readings before this were of another filesystem.
+                "moved_at": moved.isoformat(timespec="seconds") if moved else None,
                 "samples": [
                     [row["at"], row["used_bytes"],
                      row["used_bytes"] + row["free_bytes"] if row["free_bytes"] is not None

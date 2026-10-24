@@ -7,7 +7,7 @@ import os
 import tempfile
 import threading
 import unittest
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 os.environ.setdefault("DOCTOR_DATA_DIR", tempfile.mkdtemp())
@@ -150,6 +150,60 @@ class Detail(unittest.TestCase):
         supervisor.store.record_disk_sample("/data", 60, 100)
         disks = supervisor.disk_history(14)
         self.assertEqual([s[1:] for s in disks[0]["samples"]], [[60, 95]])
+
+    def _sample_at(self, at, used, total, fs_id):
+        store = self.supervisor.store
+        store._conn.execute(
+            "INSERT INTO disk_samples (path, bucket, at, used_bytes, total_bytes, free_bytes, fs_id)"
+            " VALUES (?,?,?,?,?,?,?)",
+            ("/data", at.isoformat(timespec="seconds"), at.isoformat(timespec="seconds"),
+             used, total, total - used, fs_id))
+        store._conn.commit()
+
+    def test_a_path_moved_to_another_filesystem_starts_its_history_again(self):
+        """/data on a 38 TiB volume, then on a 1.8 TiB one: no 24 TiB cleanup."""
+        supervisor = self.supervisor
+        now = datetime.now(timezone.utc)
+        self._sample_at(now - timedelta(days=5), 24_000, 38_000, "aaa")
+        self._sample_at(now - timedelta(days=3), 24_000, 38_000, "aaa")
+        self._sample_at(now - timedelta(days=2), 51, 1_800, "bbb")
+        supervisor.disk = [{"path": "/data", "total_bytes": 1_800, "used_bytes": 77,
+                            "free_bytes": 1_723, "used_pct": 4.3, "trend": None, "fs_id": "bbb"}]
+        disks = supervisor.disk_history(14)
+        self.assertEqual([s[1] for s in disks[0]["samples"]], [51])
+        self.assertTrue(disks[0]["moved_at"].startswith((now - timedelta(days=3)).date().isoformat()))
+
+    def test_the_fill_rate_is_fitted_on_this_filesystem_alone(self):
+        supervisor = self.supervisor
+        now = datetime.now(timezone.utc)
+        for days in range(10, 4, -1):  # a big volume, steady: not filling
+            self._sample_at(now - timedelta(days=days), 24_000_000_000_000, 38_000_000_000_000, "aaa")
+        usage = {"path": "/data", "total_bytes": 1_800_000_000_000, "used_bytes": 77_000_000_000,
+                 "free_bytes": 1_723_000_000_000, "used_pct": 4.3, "fs_id": "bbb"}
+        supervisor._record_disk_trend([usage])
+        # One reading on the new volume is too few for a line; 24 TB "freed"
+        # in a week is not a trend either.
+        self.assertIsNone(usage["trend"])
+
+    def test_rows_without_a_filesystem_id_are_told_apart_by_size(self):
+        supervisor = self.supervisor
+        now = datetime.now(timezone.utc)
+        self._sample_at(now - timedelta(days=4), 24_000, 38_000, None)  # the old, larger volume
+        self._sample_at(now - timedelta(days=2), 51, 1_800, None)
+        supervisor.disk = [{"path": "/data", "total_bytes": 1_800, "used_bytes": 77,
+                            "free_bytes": 1_723, "used_pct": 4.3, "trend": None, "fs_id": "bbb"}]
+        self.assertEqual([s[1] for s in supervisor.disk_history(14)[0]["samples"]], [51])
+
+    def test_a_volume_that_grew_keeps_its_history(self):
+        supervisor = self.supervisor
+        now = datetime.now(timezone.utc)
+        self._sample_at(now - timedelta(days=4), 50, 100, None)
+        self._sample_at(now - timedelta(days=2), 60, 200, "aaa")
+        supervisor.disk = [{"path": "/data", "total_bytes": 200, "used_bytes": 70,
+                            "free_bytes": 130, "used_pct": 35.0, "trend": None, "fs_id": "aaa"}]
+        disks = supervisor.disk_history(14)
+        self.assertEqual([s[1] for s in disks[0]["samples"]], [50, 60])
+        self.assertIsNone(disks[0]["moved_at"])
 
 
 if __name__ == "__main__":

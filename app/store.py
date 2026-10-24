@@ -398,6 +398,9 @@ class Store:
         have = {row["name"] for row in self._conn.execute("PRAGMA table_info(disk_samples)")}
         if "free_bytes" not in have:
             self._conn.execute("ALTER TABLE disk_samples ADD COLUMN free_bytes INTEGER")
+        # NULL on rows from before it was kept, and where statvfs has no id.
+        if "fs_id" not in have:
+            self._conn.execute("ALTER TABLE disk_samples ADD COLUMN fs_id TEXT")
         have = {row["name"] for row in self._conn.execute("PRAGMA table_info(oidc_sessions)")}
         for column, ddl in (
             ("renewed_at", "REAL NOT NULL DEFAULT 0"),
@@ -876,7 +879,7 @@ class Store:
 
     def record_disk_sample(
         self, path: str, used_bytes: int, total_bytes: int, *, free_bytes: int | None = None,
-        bucket_minutes: int = 60,
+        bucket_minutes: int = 60, fs_id: str | None = None,
     ) -> None:
         """Keep the latest reading in each time bucket."""
         now = datetime.now(timezone.utc)
@@ -884,15 +887,34 @@ class Store:
         bucket = f"{now:%Y-%m-%d}T{minutes:04d}"
         with self._lock:
             self._conn.execute(
-                """INSERT INTO disk_samples (path, bucket, at, used_bytes, total_bytes, free_bytes)
-                   VALUES (?,?,?,?,?,?)
+                """INSERT INTO disk_samples
+                     (path, bucket, at, used_bytes, total_bytes, free_bytes, fs_id)
+                   VALUES (?,?,?,?,?,?,?)
                    ON CONFLICT(path, bucket) DO UPDATE SET
                      at=excluded.at, used_bytes=excluded.used_bytes,
-                     total_bytes=excluded.total_bytes, free_bytes=excluded.free_bytes""",
+                     total_bytes=excluded.total_bytes, free_bytes=excluded.free_bytes,
+                     fs_id=excluded.fs_id""",
                 (path, bucket, now.isoformat(timespec="seconds"), int(used_bytes),
-                 int(total_bytes), None if free_bytes is None else int(free_bytes)),
+                 int(total_bytes), None if free_bytes is None else int(free_bytes), fs_id),
             )
             self._conn.commit()
+
+    def disk_moved_at(self, path: str, fs_id: str | None, total_bytes: int) -> datetime | None:
+        """The last reading of a path taken on another filesystem than today's.
+
+        A path keeps its name when its mount is moved to another volume, and
+        what came before is another disk's story: 24 TiB used dropping to
+        51 GiB is no clean-up. Rows that name their filesystem are compared by
+        it; older ones only by size: a volume grows but never shrinks, so one that
+        was larger by more than a tenth was another filesystem."""
+        with self._read() as conn:
+            row = conn.execute(
+                "SELECT MAX(at) AS at FROM disk_samples WHERE path=? AND ("
+                "  (fs_id IS NOT NULL AND ? IS NOT NULL AND fs_id != ?)"
+                "  OR (fs_id IS NULL AND total_bytes > ? * 1.1))",
+                (path, fs_id, fs_id, int(total_bytes)),
+            ).fetchone()
+        return _parse_iso(row["at"]) if row and row["at"] else None
 
     def disk_samples(self, path: str, since: datetime) -> list[tuple[datetime, int]]:
         with self._read() as conn:
