@@ -1647,9 +1647,24 @@ function poolHow(pool) {
   return "";
 }
 
+// The watched path's reading, on the volume it lives on.
+function volumeUsage(v) {
+  const disk = (state.snapshot.disk || []).find((d) => (v.paths || []).includes(d.path));
+  if (disk) return [`${pct(disk.used_pct)} used`];
+  return v.filesystem ? ["free space not watched"] : [];
+}
+
+// A volume the arrays show but no watched path is on: its free space is the
+// one figure the doctor cannot read without a mount.
+function unwatchedVolumes(pools) {
+  return pools.flatMap((p) => p.volumes || [])
+    .filter((v) => v.filesystem && !(v.paths || []).length).map((v) => v.name);
+}
+
 function volumeBits(v) {
   return [
     ...(v.paths || []).map((p) => `<code>${esc(p)}</code>`),
+    ...volumeUsage(v),
     ...(v.filesystem ? [esc(FILESYSTEMS[v.filesystem] || v.filesystem)] : []),
     ...(v.size_bytes ? [bytes(v.size_bytes)] : []),
     ...((v.cache || []).length ? [`SSD cache <code>${esc(v.cache.join(", "))}</code>`] : []),
@@ -1859,8 +1874,24 @@ function renderArrays() {
     pools.map((pool) => `<div class="pool">${poolHead(pool)}${driveNotes(inPool(pool))}${
       driveBays(members(pool).map((n) => byName.get(n)))}${members(pool)
       .map((n) => arrayRow(byName.get(n), { pool })).join("")}</div>`).join("") +
-    rest.map((a) => arrayRow(a)).join("");
+    rest.map((a) => arrayRow(a)).join("") + unwatchedNote(unwatchedVolumes(pools));
   if ($("drive").open) renderDrive();
+}
+
+function unwatchedNote(names) {
+  if (!names.length) return "";
+  const list = names.length === 1 ? names[0]
+    : `${names.slice(0, -1).join(", ")} and ${names[names.length - 1]}`;
+  return `<p class="array-detail muted">Free space on ${esc(list)} is not watched. Mount an
+    empty folder on ${names.length === 1 ? "it" : "each"} read-only and add it to
+    <code>DOCTOR_DISK_PATHS</code>; see <a href="https://sebastianbuechler.github.io/container-doctor/guides/storage/#watching-every-volume"
+    target="_blank" rel="noopener">Watching every volume</a>.</p>`;
+}
+
+// The volume a watched path lives on, when the arrays name it.
+function volumeOf(path) {
+  const pools = state.snapshot.raid?.pools || [];
+  return pools.flatMap((p) => p.volumes || []).find((v) => (v.paths || []).includes(path))?.name || "";
 }
 
 function renderDisk() {
@@ -1878,16 +1909,21 @@ function renderDisk() {
   // The rows are rebuilt only when the set of paths changes, so a chart being
   // read is not redrawn out from under the pointer on every poll.
   const host = $("disks");
-  const key = disks.map((d) => d.path).join("|");
+  const key = disks.map((d) => `${d.path}:${volumeOf(d.path)}`).join("|");
   if (host.dataset.key !== key) {
     host.dataset.key = key;
-    host.innerHTML = disks.map((d, i) => `
+    host.innerHTML = disks.map((d, i) => {
+      const volume = volumeOf(d.path);
+      return `
       <div class="disk-row" data-disk="${i}">
-        <div class="label"><code>${esc(d.path)}</code><span class="disk-figures"></span></div>
+        <div class="label"><span class="disk-name"><code>${esc(d.path)}</code>${
+          volume ? ` <span class="disk-volume">${esc(volume)}</span>` : ""}</span><span class="disk-figures"></span></div>
         <div class="meter"><div class="meter-fill"></div></div>
         <div class="chart" data-chart="disk-${i}"></div>
+        <p class="disk-moved muted" hidden></p>
         <div class="disk-table"></div>
-      </div>`).join("");
+      </div>`;
+    }).join("");
   }
   disks.forEach((d, i) => {
     const row = host.querySelector(`[data-disk="${i}"]`);
@@ -1907,6 +1943,12 @@ function renderDisk() {
       if (row._past !== past) {
         row._past = past;
         row.querySelector(".disk-table").innerHTML = diskTable(past);
+        const moved = row.querySelector(".disk-moved");
+        moved.hidden = !past.moved_at;
+        moved.textContent = past.moved_at
+          ? `Now on another filesystem than before ${new Date(past.moved_at).toLocaleDateString([],
+            { month: "short", day: "numeric" })}: the readings before then were of a different disk and are left out.`
+          : "";
       }
     } else {
       chart.innerHTML = "";

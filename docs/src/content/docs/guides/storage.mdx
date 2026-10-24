@@ -54,6 +54,43 @@ forecast rule fires on the first; only the threshold rule fires on the second.
 It takes four samples to draw a line, so a freshly deployed doctor says nothing
 about trends for the first few hours. That is the correct answer, not a gap.
 
+## Watching every volume
+
+The doctor reads free space per *filesystem*, through a path it can see:
+`statvfs` on `/data` answers for the whole volume `/data` lives on, and for
+nothing else. A host with several volumes - an SHR pool, a mirror, an NVMe
+pool - needs one watched path on each, and each gets its own row, meter,
+chart and forecast on the Storage page, named after its volume (*/data ·
+Volume 3*) when the disk arrays are read.
+
+Mount an empty folder on each other volume, read-only, and list it beside
+`/data`:
+
+```yaml
+volumes:
+  - /volume3/docker/container-doctor:/data
+  - /volume1/docker/.container-doctor-disk:/disks/volume1:ro
+  - /volume2/docker/.container-doctor-disk:/disks/volume2:ro
+```
+```
+DOCTOR_DISK_PATHS=/data,/disks/volume1,/disks/volume2
+```
+
+Docker creates a missing folder on the host when the stack starts. Never mount
+a volume's root for this: see
+[What it can read of your host](/container-doctor/guides/security/).
+
+**A volume with no watched path** says *free space not watched* under Disk
+arrays, which names the ones left to mount. Its size and filesystem still
+show; only how full it is takes the mount.
+
+**A path moved to another volume** - its data folder copied to a new pool and
+the mount pointed there - keeps its name but not its history. Each reading
+records which filesystem answered, and the chart and the forecast start again
+at the move rather than reading a 24 TiB drop as a clean-up; a line under the
+chart says when. Readings from before the doctor kept the filesystem are told
+apart by size: a volume grows but never shrinks.
+
 ## Drive health
 
 The **Drive health** panel on the Storage page shows each drive's own account

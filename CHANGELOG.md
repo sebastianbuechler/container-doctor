@@ -12,11 +12,20 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bar of asleep and awake, the share of time asleep and how often it woke.
   Read from the SMART sidecar, which never wakes a drive to ask.
 - A hard disk's page shows how often it has spun up (`Start_Stop_Count`).
+- Each watched path names the volume it is on, every volume under Disk
+  arrays shows how full it is, and volumes no watched path is on are listed
+  with how to watch them (docs: *Watching every volume*).
 
 ### Changed
 
 - A drive asleep keeps its serial and model on the Storage page, remembered
   from its last reading awake, so its temperature history stays found too.
+
+### Fixed
+
+- A watched path whose mount moved to another volume no longer charts the
+  old volume's readings as its own: the chart and the fill forecast start
+  again at the move, and a line under the chart says when.
 
 ## [0.3.0] - 2026-10-20
 
