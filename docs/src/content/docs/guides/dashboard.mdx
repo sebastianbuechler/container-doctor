@@ -174,6 +174,18 @@ everything healthy. Whatever the filter, anything stopped, unhealthy or still
 starting sorts to the top — so the thing that needs you is never behind a
 screenful of containers that are fine.
 
+## A container's history
+
+A container's page charts its CPU and memory minute by minute for the last
+24 hours, from memory, so it starts over when the doctor restarts. Below that,
+two histories kept in the database: **Memory, last 14 days**, the hourly peaks
+behind the [memory-limit suggestions](/container-doctor/guides/memory-limits/),
+and **CPU, last 14 days**, the hourly average as a share of the whole host,
+with its busiest hour - the job that keeps the host busy at night shows up
+there.
+
+<Screenshot name="container-cpu" alt="A container's CPU over 14 days: an hourly line with a spike every night at 2 a.m." />
+
 ## Which build is running
 
 **Settings → Build and mode** shows the release the running image was built

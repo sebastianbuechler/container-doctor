@@ -78,6 +78,8 @@ const state = {
   driveTempHours: 24,
   driveTemps: null,
   driveSleep: null,
+  driveIo: null,
+  driveCounters: null,
   hostHistory: null,
   hostHistoryAt: 0,
   view: "overview",
@@ -414,10 +416,12 @@ const INFO = {
   hostHistory: `<p>Averages per few minutes (<code>DOCTOR_HOST_SAMPLE_MINUTES</code>), with the
     live reading at the end, so short spikes are smoothed out.</p>
     <p>Linux load counts processes waiting on disks as well as on CPUs, so a scrub or a
-    backup lifts it without the CPU being busy.</p>`,
+    backup lifts it without the CPU being busy.</p>
+    <p><strong>CPU by container</strong> names the containers behind the CPU line, from each
+    one's hourly average.</p>`,
   hostDetail: `<ul>
       <li><strong>Disks</strong>: how busy each drive was since the last poll, and its
-        throughput.</li>
+        throughput. Each drive's own page keeps the history.</li>
       <li><strong>Pressure</strong>: the kernel's account of time spent stalled, where the
         kernel provides it.</li>
       <li><strong>Temperatures</strong>: hardware sensors, where the host exposes them to
@@ -1963,9 +1967,13 @@ function openDrive(key) {
   state.driveKey = key;
   state.driveTemps = null;
   state.driveSleep = null;
+  state.driveIo = null;
+  state.driveCounters = null;
   renderDrive();
   refreshDriveTemps();
   refreshDriveSleep();
+  refreshDriveIo();
+  refreshDriveCounters();
   const dialog = $("drive");
   if (!dialog.open) dialog.showModal();
 }
@@ -2046,12 +2054,18 @@ function renderDrive() {
       </div></div><div class="chart" data-chart="drive-temp"></div></section>` : ""}
     ${smart && canSleep(smart) ? `<section class="detail-section"><h3>Sleep</h3>
       <p class="muted" data-sleep-summary></p><div data-chart="drive-sleep"></div></section>` : ""}
+    <section class="detail-section"><h3>Reads and writes</h3>
+      <p class="muted" data-io-summary></p><div class="chart" data-chart="drive-io"></div></section>
+    ${smart ? `<section class="detail-section"><h3>Counters over time</h3>
+      <div data-drive-counters></div></section>` : ""}
     <section class="detail-section"><h3>Arrays on this drive</h3><ul class="detail-list">${arrays}</ul>
       ${anyErrors ? `<p class="muted">Read errors md has corrected on this drive, counted since each array was last
       assembled. That happens on every reboot, so a count back at 0 does not mean the drive got better: the
       warning above keeps the tally across restarts.</p>` : ""}</section>`;
   drawDriveTemps();
   drawDriveSleep();
+  drawDriveIo();
+  drawDriveCounters();
 }
 
 function driveHistoryKey(smart) {
@@ -2166,6 +2180,113 @@ function drawDriveSleep() {
       <span>${esc(shortTime(x0 + span / 2, span))}</span><span>now</span></div>
     <div class="sleep-key" aria-hidden="true"><span><i data-state="asleep"></i>asleep</span>
       <span><i data-state="awake"></i>awake</span><span><i></i>no reading</span></div>`;
+}
+
+function currentDrive() {
+  const entry = driveEntries((state.snapshot.raid || {}).arrays || []).find((e) => e.key === state.driveKey);
+  return { entry, smart: entry && smartFor(entry) };
+}
+
+// The kernel's counters are there with or without the SMART sidecar; without
+// it, a drive's I/O is filed under its device name.
+function driveIoKey() {
+  const { entry, smart } = currentDrive();
+  return entry ? driveHistoryKey(smart) || entry.disk || entry.key : null;
+}
+
+async function refreshDriveIo() {
+  const key = driveIoKey();
+  if (!key) return;
+  const hours = state.driveTempHours;
+  try {
+    const history = await api(`/api/drive/io?drive=${encodeURIComponent(key)}&hours=${hours}`);
+    if (driveIoKey() !== key || state.driveTempHours !== hours) return;
+    state.driveIo = { ...history, hours };
+  } catch (_) {
+    if (state.driveTempHours !== hours) return;
+    state.driveIo = { drive: key, hours, samples: [], read_bytes: 0, written_bytes: 0 };
+  }
+  drawDriveIo();
+}
+
+// Reads and writes added up into one line: the question is when the drive
+// was touched, and the summary says how much of it was which.
+function drawDriveIo() {
+  const host = document.querySelector('#drive-body [data-chart="drive-io"]');
+  const summary = document.querySelector("#drive-body [data-io-summary]");
+  if (!host || !summary) return;
+  const history = state.driveIo;
+  if (!history || history.drive !== driveIoKey() || history.hours !== state.driveTempHours) {
+    summary.textContent = "";
+    host.innerHTML = `<p class="chart-empty">Loading…</p>`;
+    return;
+  }
+  const range = history.hours === 168 ? "7 days" : `${history.hours} hours`;
+  const points = history.samples.map(([at, read, written]) => [new Date(at).getTime(), read + written]);
+  if (points.length) {
+    const [busiestAt] = history.samples.reduce((a, b) => (b[1] + b[2] > a[1] + a[2] ? b : a));
+    summary.textContent = `Read ${bytes(history.read_bytes)}, wrote ${bytes(history.written_bytes)} in the last ${range}`
+      + ` · busiest ${new Date(busiestAt).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+  } else {
+    summary.textContent = "";
+  }
+  drawChart(host, { points, yMin: 0, yMax: niceBytes(Math.max(1024, ...points.map((p) => p[1])) * 1.1),
+    format: (v) => `${bytes(v)}/s`, label: `Reads and writes of ${currentDrive().entry?.label || "the drive"}`,
+    empty: "The chart fills in as the doctor reads the host - a few minutes per point." });
+}
+
+async function refreshDriveCounters() {
+  const { smart } = currentDrive();
+  const key = driveHistoryKey(smart);
+  if (!key) return;
+  try {
+    const history = await api(`/api/drive/counters?drive=${encodeURIComponent(key)}&days=30`);
+    if (driveHistoryKey(currentDrive().smart) !== key) return;
+    state.driveCounters = history;
+  } catch (_) {
+    state.driveCounters = { drive: key, days: 30, counters: [] };
+  }
+  drawDriveCounters();
+}
+
+// What the counters did over the range, not just where they stand: one that
+// rose is the news, and spin-ups are worth a rate.
+function drawDriveCounters() {
+  const host = document.querySelector("#drive-body [data-drive-counters]");
+  if (!host) return;
+  const { smart } = currentDrive();
+  const history = state.driveCounters;
+  if (!history || history.drive !== driveHistoryKey(smart)) {
+    host.innerHTML = `<p class="chart-empty">Loading…</p>`;
+    return;
+  }
+  const counters = history.counters || [];
+  if (!counters.length) {
+    host.innerHTML = `<p class="muted">Nothing kept yet - the doctor keeps one reading an hour.</p>`;
+    return;
+  }
+  const words = { reallocated: "Reallocated sectors", pending: "Pending sectors",
+    uncorrectable: "Uncorrectable sectors", reported_uncorrect: "Reported uncorrectable",
+    crc_errors: "CRC errors", media_errors: "Media errors", spin_ups: "Spin-ups" };
+  const n = (v) => Number(v).toLocaleString();
+  const since = new Date(counters[0].since);
+  const days = Math.max(1 / 24, (Date.now() - since.getTime()) / 86400000);
+  const hours = Math.max(1, Math.round(days * 24));
+  const span = days >= 1.5 ? `${Math.round(days)} days` : hours === 1 ? "hour" : `${hours} hours`;
+  const rows = counters.map((c) => {
+    const moved = c.last !== c.first;
+    const pill = c.key === "spin_ups" ? ""
+      : c.last < c.first ? statusPill("went down", "neutral")
+      : moved ? statusPill(`rose ${c.rises === 1 ? "once" : `${c.rises} times`}`, "warning")
+      : statusPill("steady", "good");
+    const detail = c.key === "spin_ups"
+      ? `${n(c.last - c.first)} in ${span === "hour" ? "the last hour" : span}${days >= 1 ? `, about ${n(Math.round((c.last - c.first) / days))} a day` : ""}`
+      : moved ? `${n(c.first)} → ${n(c.last)}${c.rose_at ? `, last rose ${new Date(c.rose_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" })}` : ""}`
+      : n(c.last);
+    return `<li><span>${esc(words[c.key] || c.key)}</span><span class="muted">${esc(detail)}</span>${pill}</li>`;
+  }).join("");
+  host.innerHTML = `<p class="muted">Over the last ${esc(span)}, one reading an hour.</p>
+    <ul class="detail-list">${rows}</ul>`;
 }
 
 // --- drive health (SMART) ------------------------------------------------------------
@@ -2467,6 +2588,7 @@ async function refreshHostHistory() {
       state.hostHistoryAt = Date.now();
       drawHostCharts(true);
       renderReboots();
+      renderCpuByContainer();
     });
   } catch (_) { /* the live tiles still work without the charts */ }
 }
@@ -2545,6 +2667,18 @@ function drawHostCharts(force = false) {
     drawChart(host.querySelector(`[data-chart="host-${key}"]`),
       { ...spec, empty: "The chart fills in as the doctor samples the host - a few minutes per point." });
   }
+}
+
+// Who the CPU line above was, from each container's hourly record.
+function renderCpuByContainer() {
+  const rows = state.hostHistory?.cpu_by_container || [];
+  const when = (at) => new Date(at).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" });
+  $("host-cpu-top").innerHTML = rows.length
+    ? `<h3 class="sub-head">CPU by container</h3><ul class="detail-list">${rows.map((r) => `<li>
+        <a href="#container/${encodeURIComponent(r.name)}">${esc(r.name)}</a>
+        <span class="muted">average ${pct(r.mean)} · busiest ${esc(when(r.busiest_hour))} at ${pct(r.busiest_mean)}
+          · peak ${pct(r.peak)}</span></li>`).join("")}</ul>
+      <p class="muted host-note">Share of the whole host, averaged per hour.</p>` : "";
 }
 
 function renderReboots() {
@@ -4424,12 +4558,38 @@ function renderDetail(d) {
     </section>
     <section class="detail-section"><h3>What changed</h3>${changesBlock(d)}</section>
     <section class="detail-section"><h3>Memory, last 14 days</h3>${memoryBlock(d)}</section>
+    <section class="detail-section"><h3>CPU, last 14 days</h3>${cpuDaysBlock(d)}</section>
     <section class="detail-section"><h3>Image</h3>${imageBlock(d)}</section>
     <section class="detail-section"><h3>Stack</h3>${stackBlock(d)}</section>
     <section class="detail-section"><h3>Recent incidents</h3>${incidentsBlock(d)}</section>
     <section class="detail-section"><h3>Recent actions</h3>${actionsBlock(d)}</section>
     <section class="detail-section"><h3>Configuration</h3>${configBlock(d)}</section>`;
   charts.forEach((chart, i) => drawChart(body.querySelector(`[data-detail-chart="${i}"]`), chart.spec));
+  drawCpuDays(d);
+}
+
+// Hourly, kept for weeks: what the 24-hour chart has already forgotten, such
+// as which nights it kept the host busy.
+function cpuDaysBlock(d) {
+  const hours = d.cpu_hours || [];
+  if (!d.container.watched) return `<p class="muted">Not watched, so no history.</p>`;
+  if (!hours.length) return `<p class="muted">Collecting - one point an hour.</p>`;
+  const mean = hours.reduce((sum, h) => sum + h[1], 0) / hours.length;
+  const [busiestAt, busiest] = hours.reduce((a, b) => (b[1] > a[1] ? b : a));
+  const peak = Math.max(...hours.map((h) => h[2]));
+  return `<p class="muted">Average ${pct(mean)} of the host · busiest hour ${pct(busiest)},
+      ${esc(new Date(busiestAt).toLocaleString([], { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }))}
+      · peak ${pct(peak)}</p>
+    <div class="chart" data-chart="cpu-days"></div>`;
+}
+
+function drawCpuDays(d) {
+  const host = document.querySelector('#detail-body [data-chart="cpu-days"]');
+  if (!host) return;
+  const points = (d.cpu_hours || []).map(([at, mean]) => [new Date(at).getTime(), mean]);
+  drawChart(host, { points, yMin: 0, yMax: Math.min(100, niceCeil(Math.max(5, ...points.map((p) => p[1])) * 1.1)),
+    format: (v) => pct(v), label: `${d.container.name}: CPU per hour over the last 14 days`,
+    empty: "Collecting - one point an hour." });
 }
 
 async function loadDetail(name) {
@@ -5443,6 +5603,7 @@ document.addEventListener("click", (event) => {
       b.setAttribute("aria-checked", String(b === driveHours)));
     refreshDriveTemps();
     refreshDriveSleep();
+    refreshDriveIo();
     return;
   }
   const hostHours = event.target.closest("[data-host-hours]");

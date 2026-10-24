@@ -16,6 +16,13 @@ const AUTH = "Basic " + Buffer.from(`doctor:${process.env.DEMO_PASSWORD}`).toStr
 const DESKTOP = { width: 1280, height: 820 };
 const PHONE = { width: 390, height: 844 };
 
+// A shot inside a dialog, scrolled to the section holding this.
+const IN_DIALOG = {
+  "drive": '#drive-body [data-chart="drive-temp"]',
+  "drive-activity": '#drive-body [data-chart="drive-io"]',
+  "container-cpu": '#detail-body [data-chart="cpu-days"]',
+};
+
 // name: [route, what to wait for or do first]
 const SHOTS = [
   ["overview", "#/overview"],
@@ -23,9 +30,12 @@ const SHOTS = [
   ["incident", (ids) => `#incident/${ids.approval}`],
   ["containers", "#/containers"],
   ["container", "#container/paperless-db"],
+  ["container-cpu", "#container/paperless-db"],
   ["storage", "#/storage"],
   ["drive", "#/storage"],
+  ["drive-activity", "#/storage"],
   ["host", "#/host"],
+  ["host-cpu", "#/host", "#host-cpu-top"],
   ["network", "#/network"],
   ["updates", "#/updates"],
   ["activity", "#/activity"],
@@ -97,19 +107,21 @@ async function tour(browser, scheme) {
       }, panel);
       await page.waitForTimeout(400);
     }
-    if (name === "container" || name === "incident") await page.waitForTimeout(1200);
-    // A hard disk's own page, scrolled to its temperature and sleep.
-    if (name === "drive") {
+    if (name.startsWith("container") || name === "incident") await page.waitForTimeout(1200);
+    // A hard disk's own page.
+    if (name.startsWith("drive")) {
       await page.click(".bay[data-drive]");
       await page.waitForTimeout(1200);
-      await page.evaluate(() => document.querySelector('#drive-body [data-chart="drive-temp"]')
-        ?.closest(".detail-section").scrollIntoView({ block: "start" }));
+    }
+    if (IN_DIALOG[name]) {
+      await page.evaluate((selector) => document.querySelector(selector)
+        ?.closest(".detail-section").scrollIntoView({ block: "start" }), IN_DIALOG[name]);
       await page.waitForTimeout(400);
     }
     // The incident is scrolled to the top, under the sticky header.
     if (name === "incident") await page.evaluate(() => window.scrollBy(0, -96));
     await page.screenshot({ path: path.join(dir, `${name}-${scheme}.png`) });
-    if (name === "drive") await page.keyboard.press("Escape");
+    if (name.startsWith("drive")) await page.keyboard.press("Escape");
   }
 
   await page.setViewportSize(PHONE);
@@ -166,8 +178,10 @@ async function collect(browser) {
     const key = encodeURIComponent(drive.serial || drive.device);
     for (const hours of [24, 168]) {
       urls.push(`/api/drive/temperature?drive=${key}&hours=${hours}`);
+      urls.push(`/api/drive/io?drive=${key}&hours=${hours}`);
       if (drive.asleep || drive.rotation_rpm > 0) urls.push(`/api/drive/sleep?drive=${key}&hours=${hours}`);
     }
+    urls.push(`/api/drive/counters?drive=${key}&days=30`);
   }
   for (const image of status?.image_updates?.images || []) {
     if (image.newer) {
