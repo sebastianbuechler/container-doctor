@@ -346,7 +346,7 @@ Consecutive polls a host breach must last: ten is five minutes at the default in
 
 ### DOCTOR_HOST_SAMPLE_MINUTES
 
-One stored point per this many minutes, for the Host page's charts.
+One stored point per this many minutes, for the Host page's charts and each drive's temperature and sleep.
 
 **Default:** `5` · **Type:** whole number
 

@@ -12,6 +12,7 @@ import os
 import tempfile
 import threading
 import unittest
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,6 +103,23 @@ class Parsing(unittest.TestCase):
         self.assertTrue(drive["asleep"])
         self.assertEqual(assess(drive), ("", []))
 
+    def test_how_often_a_hard_disk_spun_up(self):
+        [drive] = smart.drives(smart.parse_metrics(
+            'smartctl_device_attribute{attribute_name="Start_Stop_Count",'
+            'attribute_value_type="raw",device="sata3"} 1234\n'
+            'smartctl_device_attribute{attribute_name="Start_Stop_Count",'
+            'attribute_value_type="value",device="sata3"} 99\n'))
+        self.assertEqual(drive["spin_ups"], 1234)
+
+    def test_only_spinning_disks_can_sleep(self):
+        self.assertTrue(smart.can_sleep(self.drives["sata1"]))
+        self.assertFalse(smart.can_sleep(self.drives["nvme0n1"]))
+        self.assertFalse(smart.can_sleep({**self.drives["sata1"], "rotation_rpm": 0}))
+        # Asleep, a drive says nothing about its rotation - but it is a disk.
+        [asleep] = smart.drives(smart.parse_metrics(
+            'smartctl_device_smartctl_exit_status{device="sata3"} 2\n'))
+        self.assertTrue(smart.can_sleep(asleep))
+
     def test_a_sata_drive_read_as_scsi_has_no_data_not_0_degrees(self):
         # sata7 on the NAS before the sidecar forced `;sat`: a WD Red that
         # smartctl took for a SCSI disk from vendor "WDC".
@@ -186,8 +204,8 @@ class Sidecar(BaseHTTPRequestHandler):
         self.wfile.write(data)
 
 
-class Supervision(unittest.TestCase):
-    """The supervisor reading the sidecar: signals, CRC baselines, recovery."""
+class SidecarCase(unittest.TestCase):
+    """A supervisor reading the fixture from a sidecar on a local port."""
 
     @classmethod
     def setUpClass(cls):
@@ -209,6 +227,7 @@ class Supervision(unittest.TestCase):
         sup.smart = None
         sup._smart_read_at = 0.0
         sup._smart_said = {}
+        sup._drive_ids = {}
         sup.broadcast = lambda *args: None
         sup.notifier = SimpleNamespace(notify_recovered=AsyncMock())
         return sup
@@ -216,6 +235,10 @@ class Supervision(unittest.TestCase):
     def read(self, sup):
         sup.smart = None  # past the once-a-minute limit
         return asyncio.run(sup._check_smart())
+
+
+class Supervision(SidecarCase):
+    """The supervisor reading the sidecar: signals, CRC baselines, recovery."""
 
     def test_signals_for_the_drives_with_problems(self):
         sup = self.supervisor()
@@ -245,6 +268,84 @@ class Supervision(unittest.TestCase):
         self.read(sup)
         self.assertEqual(sup.store.get_incident(incident_id)["status"], "resolved")
         sup.notifier.notify_recovered.assert_awaited_once()
+
+
+ASLEEP = 'smartctl_device_smartctl_exit_status{device="sata1"} 2\n'
+
+
+class Sleep(SidecarCase):
+    """Whether each hard disk slept, kept per bucket, and read back as a bar."""
+
+    def asleep(self):
+        Sidecar.body = ASLEEP
+        self.addCleanup(setattr, Sidecar, "body", FIXTURE)
+
+    def since(self):
+        return datetime.now(timezone.utc) - timedelta(hours=1)
+
+    def test_hard_disks_are_recorded_ssds_are_not(self):
+        sup = self.supervisor()
+        self.read(sup)
+        self.assertEqual(sup.store.drive_sleep_history("WD-WX12345", self.since())[0]["asleep"], 0)
+        self.assertEqual(len(sup.store.drive_sleep_history("WD-WX67890", self.since())), 1)
+        nvme = next(d for d in sup.smart["drives"] if d["device"] == "nvme0n1")
+        self.assertEqual(sup.store.drive_sleep_history(nvme["serial"], self.since()), [])
+
+    def test_a_drive_asleep_keeps_its_name_and_its_history(self):
+        sup = self.supervisor()
+        self.read(sup)
+        self.asleep()
+        self.read(sup)
+        [drive] = sup.smart["drives"]
+        self.assertTrue(drive["asleep"])
+        self.assertEqual((drive["serial"], drive["model"], drive["label"]),
+                         ("WD-WX12345", "WDC WD40EFZX-68AWUN0", "Drive 1"))
+        [row] = sup.store.drive_sleep_history("WD-WX12345", self.since())
+        self.assertEqual((row["polls"], row["asleep"]), (2, 1))
+        # Not its temperature: asleep, it has none.
+        self.assertEqual(len(sup.store.drive_temp_history("WD-WX12345", self.since())), 1)
+
+    def test_who_a_drive_is_survives_a_restart(self):
+        sup = self.supervisor()
+        self.read(sup)
+        sup._drive_ids = {}  # what a restart forgets; the store keeps it
+        self.asleep()
+        self.read(sup)
+        self.assertEqual(sup.smart["drives"][0]["serial"], "WD-WX12345")
+
+    def test_a_drive_never_seen_awake_is_filed_under_its_device(self):
+        sup = self.supervisor()
+        self.asleep()
+        self.read(sup)
+        self.assertEqual(sup.smart["drives"][0]["serial"], "")
+        self.assertEqual(len(sup.store.drive_sleep_history("sata1", self.since())), 1)
+
+    def test_how_long_it_slept_and_how_often_it_woke(self):
+        sup = self.supervisor()
+        start = datetime.now(timezone.utc).replace(second=0, microsecond=0) - timedelta(hours=2)
+        # Asleep, woken, asleep again, then a gap - the doctor down - before
+        # it is next seen awake: one wake, not two.
+        pattern = [(4, 4), (4, 4), (4, 0), (4, 3), (4, 4), None, (4, 0), (4, 0)]
+        for i, reads in enumerate(pattern):
+            if reads is None:
+                continue
+            t = start + timedelta(minutes=5 * i)
+            sup.store._conn.execute(
+                "INSERT INTO drive_sleep (drive, bucket, at, polls, asleep) VALUES (?,?,?,?,?)",
+                ("WD-1", f"{t:%Y-%m-%dT%H:%M}", t.isoformat(timespec="seconds"), *reads))
+        history = sup.drive_sleep_history("WD-1", 24)
+        self.assertEqual((history["wakes"], history["asleep_pct"]), (1, 57))
+        self.assertEqual([share for _, share in history["samples"]], [1.0, 1.0, 0.0, 0.75, 1.0, 0.0, 0.0])
+        self.assertEqual(sup.drive_sleep_history("WD-2", 24)["asleep_pct"], None)
+
+    def test_old_readings_are_pruned(self):
+        sup = self.supervisor()
+        old = datetime.now(timezone.utc) - timedelta(days=40)
+        sup.store._conn.execute(
+            "INSERT INTO drive_sleep (drive, bucket, at, polls, asleep) VALUES ('WD-1', ?, ?, 1, 1)",
+            (f"{old:%Y-%m-%dT%H:%M}", old.isoformat(timespec="seconds")))
+        sup.store.prune(30)
+        self.assertEqual(sup.store.drive_sleep_history("WD-1", old - timedelta(days=1)), [])
 
 
 if __name__ == "__main__":

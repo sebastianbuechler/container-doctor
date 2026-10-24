@@ -24,6 +24,7 @@ const SHOTS = [
   ["containers", "#/containers"],
   ["container", "#container/paperless-db"],
   ["storage", "#/storage"],
+  ["drive", "#/storage"],
   ["host", "#/host"],
   ["network", "#/network"],
   ["updates", "#/updates"],
@@ -97,9 +98,18 @@ async function tour(browser, scheme) {
       await page.waitForTimeout(400);
     }
     if (name === "container" || name === "incident") await page.waitForTimeout(1200);
+    // A hard disk's own page, scrolled to its temperature and sleep.
+    if (name === "drive") {
+      await page.click(".bay[data-drive]");
+      await page.waitForTimeout(1200);
+      await page.evaluate(() => document.querySelector('#drive-body [data-chart="drive-temp"]')
+        ?.closest(".detail-section").scrollIntoView({ block: "start" }));
+      await page.waitForTimeout(400);
+    }
     // The incident is scrolled to the top, under the sticky header.
     if (name === "incident") await page.evaluate(() => window.scrollBy(0, -96));
     await page.screenshot({ path: path.join(dir, `${name}-${scheme}.png`) });
+    if (name === "drive") await page.keyboard.press("Escape");
   }
 
   await page.setViewportSize(PHONE);
@@ -154,7 +164,10 @@ async function collect(browser) {
   for (const call of calls) urls.push(`/api/llm/calls/${encodeURIComponent(call.id)}`);
   for (const drive of status?.smart?.drives || []) {
     const key = encodeURIComponent(drive.serial || drive.device);
-    for (const hours of [24, 168]) urls.push(`/api/drive/temperature?drive=${key}&hours=${hours}`);
+    for (const hours of [24, 168]) {
+      urls.push(`/api/drive/temperature?drive=${key}&hours=${hours}`);
+      if (drive.asleep || drive.rotation_rpm > 0) urls.push(`/api/drive/sleep?drive=${key}&hours=${hours}`);
+    }
   }
   for (const image of status?.image_updates?.images || []) {
     if (image.newer) {
