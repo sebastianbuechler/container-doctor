@@ -51,7 +51,30 @@ def container_network(attrs: dict[str, Any]) -> dict[str, Any]:
         "mode": host.get("NetworkMode") or "",
         "networks": attached,
         "ports": _ports(settings.get("Ports"), host.get("PortBindings")),
+        "traefik_default": _traefik_default_network(attrs.get("Config") or {}),
     }
+
+
+_TRAEFIK_FLAG = "--providers.docker.network"
+_TRAEFIK_ENV = "TRAEFIK_PROVIDERS_DOCKER_NETWORK="
+
+
+def _traefik_default_network(config: dict[str, Any]) -> str:
+    """The network Traefik uses for every container without a
+    traefik.docker.network label, when this container is a Traefik started
+    with --providers.docker.network or its environment variable. A setting
+    in a mounted traefik.yml cannot be seen from here."""
+    args = [*(config.get("Entrypoint") or []), *(config.get("Cmd") or [])]
+    for i, arg in enumerate(args):
+        arg = str(arg)
+        if arg.startswith(_TRAEFIK_FLAG + "="):
+            return arg.split("=", 1)[1].strip()
+        if arg == _TRAEFIK_FLAG and i + 1 < len(args):
+            return str(args[i + 1]).strip()
+    for entry in config.get("Env") or []:
+        if str(entry).startswith(_TRAEFIK_ENV):
+            return str(entry)[len(_TRAEFIK_ENV):].strip()
+    return ""
 
 
 def _ports(live: dict | None, configured: dict | None) -> list[dict[str, Any]]:
@@ -112,6 +135,10 @@ def report(containers: list[dict[str, Any]],
     exposed: list[dict[str, Any]] = []
     findings: list[dict[str, Any]] = []
     multi_homed = 0
+    # Traefik's own default for containers without traefik.docker.network.
+    # Two Traefiks that disagree leave it unknown.
+    defaults = {(c.get("network") or {}).get("traefik_default") for c in containers} - {"", None}
+    traefik_default = next(iter(defaults)) if len(defaults) == 1 else ""
 
     for container in sorted(containers, key=lambda c: c.get("name", "")):
         net = container.get("network")
@@ -150,7 +177,7 @@ def report(containers: list[dict[str, Any]],
         ports = net.get("ports") or []
         if ports:
             exposed.append({**member, "ports": ports})
-        findings.extend(_findings(container, net, ports))
+        findings.extend(_findings(container, net, ports, traefik_default))
 
     for n in networks.values():
         # An internal network is a guess from the absence of a gateway, and
@@ -283,7 +310,7 @@ _SEVERITY_RANK = {"warning": 0, "info": 1}
 
 
 def _findings(container: dict[str, Any], net: dict[str, Any],
-              ports: list[dict[str, Any]]) -> list[dict[str, Any]]:
+              ports: list[dict[str, Any]], traefik_default: str = "") -> list[dict[str, Any]]:
     labels = container.get("labels") or {}
     name = container["name"]
     mode = net.get("mode") or ""
@@ -295,10 +322,13 @@ def _findings(container: dict[str, Any], net: dict[str, Any],
 
     routed = str(labels.get("traefik.enable", "")).lower() == "true"
     wanted = labels.get("traefik.docker.network", "")
+    source = "traefik.docker.network"
+    if not wanted and traefik_default:
+        wanted, source = traefik_default, "Traefik's providers.docker.network"
     if routed and mode != "host":
         if wanted and wanted not in names and not any(n.endswith(f"_{wanted}") for n in names):
             add("traefik_network_missing", "warning",
-                f"traefik.docker.network names {wanted}, which {name} is not attached to - "
+                f"{source} names {wanted}, which {name} is not attached to - "
                 "Traefik will answer 502/504 for it.")
         elif not wanted and len(names) > 1:
             add("traefik_network_ambiguous", "info",
