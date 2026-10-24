@@ -186,13 +186,32 @@ class Inventory(unittest.TestCase):
         self.assertIn("stack old", finding["summary"])
         self.assertEqual(result["summary"]["unused"], 1)
 
-    def test_macvlan_is_explained(self):
-        result = report([], [listed("lan", driver="macvlan", subnet="192.168.1.0/24",
-                                    Options={"parent": "eth0"})])
-        kinds = [f["kind"] for f in result["findings"]]
-        self.assertIn("lan_network", kinds)
-        self.assertIn("eth0", next(f["summary"] for f in result["findings"]
-                                   if f["kind"] == "lan_network"))
+    def test_macvlan_is_on_the_card_not_a_note(self):
+        lan = listed("lan", driver="macvlan", subnet="192.168.1.0/24", Options={"parent": "eth0"})
+        result = report([container("pihole", attrs("pihole", {
+            "lan": endpoint("192.168.1.5", prefix=24)}))], [lan])
+        self.assertEqual(result["findings"], [])
+        [net] = result["networks"]
+        self.assertEqual((net["driver"], net["parent"]), ("macvlan", "eth0"))
+
+    def test_every_note_has_a_key_that_names_what_it_is_about(self):
+        result = report([container("old", attrs("old", {"bridge": endpoint("172.17.0.2")}))],
+                        [listed("gone_default")])
+        self.assertEqual(sorted(f["key"] for f in result["findings"]),
+                         ["default_bridge:old", "unused_network:gone_default"])
+        self.assertNotIn("subject", result["findings"][0])
+
+    def test_a_dismissed_note_is_set_apart_and_not_counted(self):
+        raw = attrs("app", {"proxy": endpoint("172.20.0.3")}, ports={
+            "80/tcp": [{"HostIp": "0.0.0.0", "HostPort": "8081"}]})
+        apps = [container("app", raw, labels={"traefik.enable": "true",
+                                              "traefik.docker.network": "elsewhere"})]
+        result = report(apps, dismissed={"published_and_proxied:app": {
+            "dismissed_by": "admin", "dismissed_at": "2026-10-24T20:00:00+00:00"}})
+        self.assertEqual([f["kind"] for f in result["findings"]], ["traefik_network_missing"])
+        self.assertEqual(result["summary"]["warnings"], 1)
+        [aside] = result["dismissed"]
+        self.assertEqual((aside["key"], aside["dismissed_by"]), ("published_and_proxied:app", "admin"))
 
     def test_icc_off_is_read_from_the_options(self):
         result = report([], [listed("quiet", Options={
