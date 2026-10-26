@@ -228,6 +228,7 @@ class SidecarCase(unittest.TestCase):
         sup._smart_read_at = 0.0
         sup._smart_said = {}
         sup._drive_ids = {}
+        sup._cold_seen = {}
         sup.broadcast = lambda *args: None
         sup.notifier = SimpleNamespace(notify_recovered=AsyncMock())
         return sup
@@ -357,6 +358,106 @@ class Sleep(SidecarCase):
             (f"{old:%Y-%m-%dT%H:%M}", old.isoformat(timespec="seconds")))
         sup.store.prune(30)
         self.assertEqual(sup.store.drive_sleep_history("WD-1", old - timedelta(days=1)), [])
+
+
+# Drive 1 of the fixture, as an SSD in an expansion unit: sata5, its own serial.
+COLD = "".join(line.replace('device="sata1"', 'device="sata5"').replace("WD-WX12345", "SSD-COLD-1") + "\n"
+               for line in FIXTURE.splitlines() if 'device="sata1"' in line)
+
+
+class ColdSidecar(Sidecar):
+    body = COLD
+
+
+class ColdDrives(SidecarCase):
+    """Drives read by the second, slow reader: merged in, recorded only when
+    their reading is new, and never asked about sleep."""
+
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        cls.cold_server = HTTPServer(("127.0.0.1", 0), ColdSidecar)
+        threading.Thread(target=cls.cold_server.serve_forever, daemon=True).start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.cold_server.shutdown()
+        cls.cold_server.server_close()
+        super().tearDownClass()
+
+    def supervisor(self, cold_url=None):
+        sup = super().supervisor()
+        sup.settings = Settings(
+            smart_url=sup.settings.smart_url, public_url="",
+            smart_cold_devices=["/dev/sata5"], smart_cold_hours=24,
+            smart_cold_url=cold_url or f"http://127.0.0.1:{self.cold_server.server_address[1]}/metrics")
+        return sup
+
+    def since(self):
+        return datetime.now(timezone.utc) - timedelta(hours=1)
+
+    def cold(self, sup):
+        return next(d for d in sup.smart["drives"] if d["device"] == "sata5")
+
+    def test_merged_in_order_and_marked_cold(self):
+        sup = self.supervisor()
+        self.read(sup)
+        self.assertEqual([d["device"] for d in sup.smart["drives"]], ["sata1", "sata2", "sata5", "nvme0n1"])
+        cold = self.cold(sup)
+        self.assertTrue(cold["cold"])
+        self.assertTrue(cold["read_at"])
+        self.assertFalse(any(d.get("cold") for d in sup.smart["drives"] if d["device"] != "sata5"))
+        self.assertEqual(sup.smart["cold"], {"hours": 24, "error": None})
+
+    def test_a_reading_served_again_is_not_recorded_again(self):
+        sup = self.supervisor()
+        self.read(sup)
+        self.read(sup)
+        [row] = sup.store.drive_temp_history("SSD-COLD-1", self.since())
+        self.assertEqual(row["celsius"], 34)
+        # Drive 1 is read every time: two polls in one bucket.
+        self.assertEqual(sup.store._conn.execute(
+            "SELECT polls FROM drive_temps WHERE drive='SSD-COLD-1'").fetchone()[0], 1)
+        self.assertEqual(sup.store._conn.execute(
+            "SELECT polls FROM drive_temps WHERE drive='WD-WX12345'").fetchone()[0], 2)
+
+    def test_a_new_reading_is_recorded(self):
+        sup = self.supervisor()
+        self.read(sup)
+        first = self.cold(sup)["read_at"]
+        ColdSidecar.body = COLD.replace('temperature_type="current"} 34', 'temperature_type="current"} 36')
+        self.addCleanup(setattr, ColdSidecar, "body", COLD)
+        self.read(sup)
+        self.assertTrue(self.cold(sup)["fresh"])
+        self.assertGreaterEqual(self.cold(sup)["read_at"], first)
+        self.assertEqual(sup.store._conn.execute(
+            "SELECT polls FROM drive_temps WHERE drive='SSD-COLD-1'").fetchone()[0], 2)
+
+    def test_when_it_was_read_survives_a_restart(self):
+        sup = self.supervisor()
+        self.read(sup)
+        first = self.cold(sup)["read_at"]
+        sup._cold_seen = {}
+        self.read(sup)
+        self.assertEqual((self.cold(sup)["fresh"], self.cold(sup)["read_at"]), (False, first))
+
+    def test_its_sleep_is_not_tracked(self):
+        sup = self.supervisor()
+        self.read(sup)
+        self.assertFalse(smart.can_sleep(self.cold(sup)))
+        self.assertEqual(sup.store.drive_sleep_history("SSD-COLD-1", self.since()), [])
+
+    def test_a_cold_reader_not_answering_leaves_the_rest(self):
+        sup = self.supervisor(cold_url="http://127.0.0.1:9/metrics")
+        self.read(sup)
+        self.assertEqual([d["device"] for d in sup.smart["drives"]], ["sata1", "sata2", "nvme0n1"])
+        self.assertTrue(sup.smart["cold"]["error"])
+        self.assertIsNone(sup.smart["error"])
+
+    def test_without_cold_drives_nothing_is_asked(self):
+        sup = SidecarCase.supervisor(self)
+        self.read(sup)
+        self.assertIsNone(sup.smart["cold"])
 
 
 if __name__ == "__main__":

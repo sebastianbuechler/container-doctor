@@ -144,6 +144,8 @@ class Supervisor:
         self._smart_said: dict[str, str] = {}
         # Device -> who the drive in it was when last read awake.
         self._drive_ids: dict[str, dict[str, Any]] = {}
+        # Cold drive -> the fingerprint of its last reading, and when it came.
+        self._cold_seen: dict[str, dict[str, str]] = {}
 
         self.briefing = briefing.Briefing(
             store=self.store,
@@ -987,6 +989,9 @@ class Supervisor:
             self.smart = {"drives": [], "error": f"{exc.__class__.__name__}: {exc}"[:200],
                           "checked_at": utcnow()}
             return []
+        cold, cold_error = await self._read_cold_drives()
+        known = {d["device"] for d in drives}
+        drives = smart.ordered(drives + [d for d in cold if d["device"] not in known])
         await self._recall_drives(drives)
         signals = []
         for drive in drives:
@@ -1008,8 +1013,13 @@ class Supervisor:
             signal.unchanged = self._smart_said.get(signal.fingerprint) == signal.summary
             self._smart_said[signal.fingerprint] = signal.summary
             signals.append(signal)
-        self.smart = {"drives": drives, "error": None, "checked_at": utcnow()}
-        temps = {drive_key(d): d["temperature"] for d in drives
+        self.smart = {"drives": drives, "error": None, "checked_at": utcnow(),
+                      "cold": {"hours": self.settings.smart_cold_hours, "error": cold_error}
+                      if self.settings.smart_cold_devices else None}
+        # A cold drive's reading is kept only the time it is new: served again
+        # for a day, it would chart a day-old temperature as the current one.
+        drives_now = [d for d in drives if not d.get("cold") or d.get("fresh")]
+        temps = {drive_key(d): d["temperature"] for d in drives_now
                  if d["temperature"] is not None and not d["asleep"]}
         try:
             await asyncio.to_thread(self.store.record_drive_temps, temps,
@@ -1017,7 +1027,7 @@ class Supervisor:
         except Exception:
             log.exception("could not record drive temperatures")
         sleep = {drive_key(d): d["asleep"] for d in drives if smart.can_sleep(d)}
-        counters = {drive_key(d): smart.counters(d) for d in drives if not d["asleep"]}
+        counters = {drive_key(d): smart.counters(d) for d in drives_now if not d["asleep"]}
         try:
             await asyncio.to_thread(self.store.record_drive_counters,
                                     {k: v for k, v in counters.items() if v})
@@ -1030,6 +1040,37 @@ class Supervisor:
             log.exception("could not record drive sleep")
         await self._resolve_healthy_drives(drives)
         return signals
+
+    async def _read_cold_drives(self) -> tuple[list[dict[str, Any]], str | None]:
+        """The cold drives' reader: its last reading of each, which may be a
+        day old. Asking it is free - it reads the drives only once its interval
+        is up, and that first answer waits for the unit to wake, hence the
+        longer timeout. A reading counts as new when its values moved."""
+        if not self.settings.smart_cold_devices:
+            return [], None
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.get(self.settings.smart_cold_url)
+                response.raise_for_status()
+            drives = smart.drives(smart.parse_metrics(response.text))
+        except Exception as exc:
+            return [], f"{exc.__class__.__name__}: {exc}"[:200]
+        for d in drives:
+            key = f"smart_cold:{d['serial'] or d['device']}"
+            seen = self._cold_seen.get(key)
+            if seen is None:
+                try:
+                    seen = json.loads(await asyncio.to_thread(self.store.host_state, key) or "{}")
+                except ValueError:
+                    seen = {}
+            fingerprint = smart.fingerprint(d)
+            d["cold"], d["fresh"] = True, seen.get("fp") != fingerprint
+            if d["fresh"]:
+                seen = {"fp": fingerprint, "at": utcnow()}
+                await asyncio.to_thread(self.store.set_host_state, key, json.dumps(seen))
+            self._cold_seen[key] = seen
+            d["read_at"] = seen.get("at")
+        return drives, None
 
     def _drive_history_key(self, device: str) -> str:
         """The kernel's name for a disk, filed like SMART files it: under the

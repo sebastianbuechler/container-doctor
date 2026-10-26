@@ -538,6 +538,13 @@ class Settings:
     smart_nvme_temp_c: float = setting("DOCTOR_SMART_NVME_TEMP_C", 70.0)
     # Share of an SSD's rated write endurance used before it is worth a word.
     smart_wear_pct: float = setting("DOCTOR_SMART_WEAR_PCT", 90.0)
+    # Cold drives: read only every DOCTOR_SMART_COLD_HOURS, by a second reader
+    # in the sidecar, because even asking whether they sleep wakes them - an
+    # expansion unit in deep sleep powers up for it. Their device files, comma
+    # separated, as for DOCTOR_SMART_DEVICES; the sidecar reads the same list.
+    smart_cold_devices: list[str] = setting("DOCTOR_SMART_COLD_DEVICES", ())
+    smart_cold_hours: float = setting("DOCTOR_SMART_COLD_HOURS", 24.0)
+    smart_cold_url: str = setting("DOCTOR_SMART_COLD_URL", "http://doctor-smart:9634/metrics")
     # One stored point per this many minutes, for the Host page's charts and
     # each drive's temperature and sleep.
     host_sample_minutes: int = setting("DOCTOR_HOST_SAMPLE_MINUTES", 5)
@@ -774,6 +781,9 @@ class Settings:
                     ("Hard disk too warm at", f"{self.smart_temp_c:g} °C", ""),
                     ("NVMe too warm at", f"{self.smart_nvme_temp_c:g} °C", ""),
                     ("SSD wear warning at", f"{self.smart_wear_pct:g}% used", ""),
+                    ("Cold drives", ", ".join(self.smart_cold_devices) or "none",
+                     f"read every {self.smart_cold_hours:g} hours from {self.smart_cold_url}"
+                     if self.smart_cold_devices else "every drive is read every five minutes"),
                 ],
             },
             {
@@ -1252,6 +1262,8 @@ ENV_FOR: dict[tuple[str, str], tuple[str, ...]] = {
     ("Drive health", "Hard disk too warm at"): ("DOCTOR_SMART_TEMP_C",),
     ("Drive health", "NVMe too warm at"): ("DOCTOR_SMART_NVME_TEMP_C",),
     ("Drive health", "SSD wear warning at"): ("DOCTOR_SMART_WEAR_PCT",),
+    ("Drive health", "Cold drives"): ("DOCTOR_SMART_COLD_DEVICES", "DOCTOR_SMART_COLD_HOURS",
+                                      "DOCTOR_SMART_COLD_URL"),
     ("Remediation", "Auto-applies"): ("DOCTOR_AUTO_ACTIONS",),
     ("Remediation", "Minimum confidence"): ("DOCTOR_MIN_CONFIDENCE",),
     ("Remediation", "Rate limit"): ("DOCTOR_MAX_ACTIONS_PER_CONTAINER_PER_HOUR",

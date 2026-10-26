@@ -420,6 +420,24 @@ Share of an SSD's rated write endurance used before it is worth a word.
 
 **Default:** `90` · **Type:** number
 
+### DOCTOR_SMART_COLD_DEVICES
+
+Cold drives: read only every DOCTOR_SMART_COLD_HOURS (default once a day) instead of every five minutes, by a second reader in the sidecar. For drives that even the question "are you asleep?" wakes - an expansion unit in deep sleep powers up for it. List their device files, comma separated; the everyday reader then leaves them alone. Their sleep is not tracked.
+
+**Default:** `none` · **Type:** comma-separated list
+
+### DOCTOR_SMART_COLD_HOURS
+
+Cold drives: read only every DOCTOR_SMART_COLD_HOURS, by a second reader in the sidecar, because even asking whether they sleep wakes them - an expansion unit in deep sleep powers up for it. Their device files, comma separated, as for DOCTOR_SMART_DEVICES; the sidecar reads the same list.
+
+**Default:** `24` · **Type:** number
+
+### DOCTOR_SMART_COLD_URL
+
+Cold drives: read only every DOCTOR_SMART_COLD_HOURS, by a second reader in the sidecar, because even asking whether they sleep wakes them - an expansion unit in deep sleep powers up for it. Their device files, comma separated, as for DOCTOR_SMART_DEVICES; the sidecar reads the same list.
+
+**Default:** `http://doctor-smart:9634/metrics`
+
 ## Remediation
 
 ### DOCTOR_AUTO_ACTIONS
