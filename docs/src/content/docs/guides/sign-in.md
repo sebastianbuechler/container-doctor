@@ -8,6 +8,9 @@ to run open: with neither `DOCTOR_WEB_PASSWORD` nor OIDC configured, every
 page and API request is answered `403 Set DOCTOR_WEB_PASSWORD or configure
 OIDC`. Only `/healthz`, the static files and the sign-in status the page reads
 to draw its sign-in button (`/api/me`, `/api/auth/provider`) are served.
+A dashboard such as Homepage does not sign in: `DOCTOR_WIDGET_TOKEN` lets it
+read `/api/widget`, a few counts, and nothing else - see
+[Homepage](/container-doctor/guides/homepage/).
 
 There are two ways in:
 

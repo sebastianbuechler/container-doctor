@@ -407,6 +407,10 @@ class Settings:
     settings_editable: bool = setting("DOCTOR_SETTINGS_EDITABLE", True, env_only=True)
     web_password: str = setting("DOCTOR_WEB_PASSWORD", "", secret=True,
                                 convert=_refuse_placeholder)
+    # Read-only token for a dashboard such as Homepage, sent as
+    # `Authorization: Bearer <token>`. It opens /api/widget - a few counts -
+    # and nothing else, so it can sit in another app's config. Empty: off.
+    widget_token: str = setting("DOCTOR_WIDGET_TOKEN", "", secret=True)
 
     # Where the database lives inside the container; mount a volume here.
     data_dir: str = setting("DOCTOR_DATA_DIR", "/data", env_only=True)
@@ -816,6 +820,8 @@ class Settings:
                      "unset means a new one per restart, so restarts sign you out"),
                     ("Password fallback", Switch.ON if self.password_fallback else Switch.OFF,
                      "keeps the password working while OIDC is configured"),
+                    ("Widget token", present(self.widget_token),
+                     "lets a dashboard such as Homepage read /api/widget, and nothing else"),
                 ],
             },
             {
@@ -912,6 +918,11 @@ class Settings:
             problems.append(
                 f"DOCTOR_WEB_PASSWORD is shorter than {SHORT_PASSWORD} characters; "
                 "anyone who can reach the dashboard can guess at it."
+            )
+        if self.widget_token and len(self.widget_token) < SHORT_PASSWORD:
+            problems.append(
+                f"DOCTOR_WIDGET_TOKEN is shorter than {SHORT_PASSWORD} characters; "
+                "choose a long random one, e.g. `openssl rand -hex 24`."
             )
         if not (self.web_password or self.oidc_enabled):
             problems.append(
@@ -1259,6 +1270,7 @@ ENV_FOR: dict[tuple[str, str], tuple[str, ...]] = {
     ("Access", "Session"): ("DOCTOR_SESSION_HOURS",),
     ("Access", "Session secret"): ("DOCTOR_SESSION_SECRET",),
     ("Access", "Password fallback"): ("DOCTOR_WEB_PASSWORD_FALLBACK",),
+    ("Access", "Widget token"): ("DOCTOR_WIDGET_TOKEN",),
     ("Briefing", "Summary"): ("DOCTOR_BRIEFING",),
     ("Briefing", "Model"): ("DOCTOR_BRIEFING_MODEL", "DOCTOR_MODEL"),
     ("Briefing", "Rewrite at most every"): ("DOCTOR_BRIEFING_REFRESH_MINUTES",),

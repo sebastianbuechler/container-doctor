@@ -672,6 +672,26 @@ def build_app(supervisor: Supervisor, settings: Settings,
     async def status(_: str = Depends(identify)) -> dict[str, Any]:
         return await asyncio.to_thread(supervisor.status)
 
+    def widget_reader(request: Request) -> str:
+        """DOCTOR_WIDGET_TOKEN as a Bearer token, or anyone signed in. The
+        token is checked here only, so it opens this endpoint and no other."""
+        header = request.headers.get("authorization", "")
+        if settings.widget_token and header.lower().startswith("bearer "):
+            client = client_of(request.scope)[0]
+            if too_many_failures(client):
+                raise HTTPException(status_code=429,
+                                    detail="too many wrong tokens; try again later")
+            if secrets.compare_digest(header[7:].strip().encode(),
+                                      settings.widget_token.encode()):
+                return "widget"
+            failures.setdefault(client, []).append(time.monotonic())
+            raise HTTPException(status_code=401, detail="wrong widget token")
+        return identify(request)
+
+    @app.get("/api/widget")
+    async def widget(_: str = Depends(widget_reader)) -> dict[str, Any]:
+        return await asyncio.to_thread(supervisor.widget_summary)
+
     background: set[asyncio.Task] = set()
 
     def _spawn(coro) -> None:

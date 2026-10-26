@@ -2821,6 +2821,46 @@ class Supervisor:
             "pending_approvals": len(self.store.pending_actions()),
         }
 
+    def widget_summary(self) -> dict[str, Any]:
+        """A few counts for another dashboard's tile (Homepage and the like),
+        read with DOCTOR_WIDGET_TOKEN.
+
+        Flat and stable: other apps' configs name these fields, so add to it
+        rather than rename. Counts only - no names, logs or settings - since
+        the token lives in someone else's config."""
+        watched = [c for c in self.containers.values() if c.get("watched")]
+        open_incidents = self.store.count_incidents(self.store.ACTIVE)
+        pending = len(self.store.pending_actions())
+        unhealthy = sum(1 for c in watched if _state_rank(c) == 1)
+        last_poll = _parse_dt(self.last_poll_at)
+        if not self.docker_connected:
+            state = "docker unreachable"
+        elif pending:
+            state = "awaiting approval"
+        elif open_incidents:
+            state = "attention"
+        else:
+            state = "ok"
+        return {
+            "status": state,
+            "open_incidents": open_incidents,
+            "pending_approvals": pending,
+            "incidents_24h": self.store.count_incidents_since(
+                datetime.now(timezone.utc) - timedelta(days=1)),
+            "containers_watched": len(watched),
+            "containers_running": sum(1 for c in watched if c.get("state") == "running"),
+            "containers_unhealthy": unhealthy,
+            "containers_stopped": sum(1 for c in watched if _state_rank(c) == 0),
+            "image_updates": int((self.image_updates or {}).get("available") or 0),
+            "llm_spent_today_usd": round(self.store.usage_today()["cost_usd"], 2),
+            "llm_budget_usd": self.settings.daily_usd_budget,
+            "docker_connected": self.docker_connected,
+            "last_poll_seconds_ago": (
+                int((datetime.now(timezone.utc) - last_poll).total_seconds())
+                if last_poll else None),
+            "version": self.settings.version,
+        }
+
 
 
 def _sighting_lines(signal: Signal) -> list[str]:

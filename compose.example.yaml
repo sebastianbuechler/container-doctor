@@ -317,6 +317,8 @@ services:
       - DOCTOR_SESSION_SECRET=${DOCTOR_SESSION_SECRET:-}
       - DOCTOR_SESSION_HOURS=${DOCTOR_SESSION_HOURS:-}
       - DOCTOR_WEB_PASSWORD_FALLBACK=${DOCTOR_WEB_PASSWORD_FALLBACK:-}
+      # Read-only token for a Homepage tile; opens /api/widget and nothing else.
+      - DOCTOR_WIDGET_TOKEN=${DOCTOR_WIDGET_TOKEN:-}
       # false makes the Settings page read-only: the stack environment alone
       # changes settings.
       - DOCTOR_SETTINGS_EDITABLE=${DOCTOR_SETTINGS_EDITABLE:-}
