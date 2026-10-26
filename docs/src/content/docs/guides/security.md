@@ -120,7 +120,10 @@ read as 0, so it can never clear `DOCTOR_MIN_CONFIDENCE`.
 **The dashboard can restart containers.** It refuses every request until
 `DOCTOR_WEB_PASSWORD` (a real one, not a placeholder) or OIDC is
 configured; only `/healthz`, `/api/me`, `/api/auth/provider` and the static
-files are served before that. Keep it on your LAN or VPN. The password travels
+files are served before that. `DOCTOR_WIDGET_TOKEN`, if set, opens
+`/api/widget` alone - counts, no names or logs - for a
+[Homepage tile](/container-doctor/guides/homepage/); it is checked on no other
+route. Keep it on your LAN or VPN. The password travels
 as HTTP Basic auth, in the clear over plain HTTP, so anywhere beyond a trusted
 LAN put a reverse proxy with TLS in front of it; on a public hostname, also set
 `DOCTOR_PUBLIC_URL` and prefer OIDC. With the proxy on the same host, publish
@@ -132,8 +135,8 @@ the port as `127.0.0.1:8080:8080` so only the proxy reaches it. See
   browser's `Origin` and `Sec-Fetch-Site` headers. A browser sends a cached
   Basic-auth password with any request to the site, a form on another site's
   page included; this is what stops that page from approving an action.
-- **Password guessing.** After 10 wrong passwords within 5 minutes, a client
-  gets `429` for the rest of that window. A client is the address in
+- **Password guessing.** After 10 wrong passwords or widget tokens within 5
+  minutes, a client gets `429` for the rest of that window. A client is the address in
   `X-Real-Ip` when a reverse proxy sets it, else the connection's; behind a
   proxy that sets neither, every browser counts as one client.
 - **Sessions.** OIDC sessions are signed with `DOCTOR_SESSION_SECRET`, or with

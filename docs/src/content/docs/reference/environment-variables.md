@@ -536,6 +536,12 @@ With OIDC on, the password is refused unless this is true - a way back in when t
 
 **Default:** `off` · **Type:** on / off · **Environment only**
 
+### DOCTOR_WIDGET_TOKEN
+
+Read-only token for a Homepage tile: opens /api/widget, a few counts, and nothing else. openssl rand -hex 24
+
+**Default:** `unset` · **Secret**
+
 ## Briefing
 
 ### DOCTOR_BRIEFING

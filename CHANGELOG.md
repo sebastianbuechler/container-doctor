@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- `/api/widget`: a few counts - open incidents, actions to approve, unhealthy
+  and stopped containers, LLM spend today - for a Homepage `customapi` tile.
+  `DOCTOR_WIDGET_TOKEN`, sent as a Bearer token, reads it and nothing else, so
+  Homepage needs no sign-in, and works with OIDC as the only way in.
+
 ## [0.6.0] - 2026-10-24
 
 ### Added

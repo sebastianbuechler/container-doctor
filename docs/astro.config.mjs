@@ -61,6 +61,7 @@ export default defineConfig({
               'guides/incidents',
               'guides/investigating',
               'guides/per-container',
+              'guides/homepage',
             ] },
             { label: 'What it watches', items: [
               'guides/host',
