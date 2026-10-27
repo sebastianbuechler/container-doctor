@@ -6,6 +6,16 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-10-27
+
+### Fixed
+
+- A drive's temperature and reads-and-writes charts span the whole range
+  picked - 24 hours or 7 days, up to now - rather than starting at the oldest
+  reading in it, so a day with readings missing no longer shrinks "24 hours"
+  to ten. Where there are no readings, the line leaves a gap instead of
+  running straight across it.
+
 ## [0.8.0] - 2026-10-27
 
 ### Added
@@ -248,7 +258,8 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `DOCTOR_NTFY_PRIORITY`, which was never read.
 
-[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/sebastianbuechler/container-doctor/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/sebastianbuechler/container-doctor/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/sebastianbuechler/container-doctor/compare/v0.5.0...v0.6.0
