@@ -1526,7 +1526,9 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
 
 /* --- disk arrays ---------------------------------------------------------- */
 
-.array-list { padding: 0 16px 16px; display: grid; gap: 10px; }
+/* One column no wider than the panel: a long line in a snippet scrolls inside
+   it instead of widening every pool beyond the screen. */
+.array-list { padding: 0 16px 16px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 .array-list:empty { display: none; }
 .sub-head { font-size: 13px; color: var(--ink-2); margin-top: 4px; }
 .array-row { display: grid; gap: 4px; }
@@ -1703,7 +1705,7 @@ button.choice:focus-visible { outline: 2px solid var(--accent); outline-offset: 
   .bay-seg.is-busy, .bay-swatch.is-busy, .meter-fill.is-busy { animation: none; }
 }
 @media (max-width: 560px) {
-  .bay-hint { display: none; }
+  .bay-legend > .bay-hint { display: none; }
 }
 
 /* --- newer versions ------------------------------------------------------- */
