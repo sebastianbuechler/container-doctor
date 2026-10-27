@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- Storage on a phone: the disk arrays no longer run off the right edge of the
+  panel when a volume's free space is not watched; the setup snippet scrolls
+  in its own box. The "Select a drive" hint is hidden on narrow screens, as
+  intended.
+
 ## [0.7.0] - 2026-10-26
 
 ### Added
