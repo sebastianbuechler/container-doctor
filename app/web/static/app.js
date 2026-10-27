@@ -1376,7 +1376,11 @@ function longTime(ms) {
 }
 
 // spec: { points: [[ms, value, ...extra]], projection?: [[ms, value]], yMin, yMax,
-//         format(value, long, point), label, refs?: [{ value, label, kind }] }
+//         format(value, long, point), label, refs?: [{ value, label, kind }],
+//         from?, to?, gap? }
+// from/to pin the time axis to a range ("the last 24 hours") rather than to
+// wherever the samples happen to start; samples further apart than gap ms
+// leave a gap, so a stretch with no readings is not drawn as a made-up line.
 function drawChart(host, spec) {
   host._spec = spec;
   const width = Math.max(240, host.clientWidth || 0);
@@ -1388,8 +1392,8 @@ function drawChart(host, spec) {
     host.innerHTML = `<p class="chart-empty">${esc(spec.empty || "Not enough samples yet.")}</p>`;
     return;
   }
-  const x0 = all[0][0];
-  const x1 = all[all.length - 1][0];
+  const x0 = Math.min(spec.from ?? Infinity, all[0][0]);
+  const x1 = Math.max(spec.to ?? -Infinity, all[all.length - 1][0]);
   const span = Math.max(1, x1 - x0);
   const yMin = spec.yMin ?? 0;
   const yMax = spec.yMax > yMin ? spec.yMax : yMin + 1;
@@ -1406,9 +1410,17 @@ function drawChart(host, spec) {
       y1="${sy(r.value)}" y2="${sy(r.value)}"></line>
     <text class="chart-ref-label" x="${width - right}" y="${r.kind === "warning" ? sy(r.value) + 13 : sy(r.value) - 4}"
       text-anchor="end">${esc(r.label)}</text>`).join("");
-  const line = path(spec.points);
+  const runs = [];
+  spec.points.forEach((p, i) => {
+    if (i && spec.gap && p[0] - spec.points[i - 1][0] > spec.gap) runs.push([p]);
+    else if (i) runs[runs.length - 1].push(p);
+    else runs.push([p]);
+  });
+  // A lone reading between gaps is a zero-length segment: its round cap draws a dot.
+  const line = runs.map((run) => path(run.length > 1 ? run : [run[0], run[0]])).join("");
   const last = spec.points[spec.points.length - 1];
-  const area = `${line}L${sx(last[0]).toFixed(1)},${sy(yMin)}L${sx(spec.points[0][0]).toFixed(1)},${sy(yMin)}Z`;
+  const area = runs.filter((run) => run.length > 1).map((run) =>
+    `${path(run)}L${sx(run[run.length - 1][0]).toFixed(1)},${sy(yMin)}L${sx(run[0][0]).toFixed(1)},${sy(yMin)}Z`).join("");
   const projection = spec.projection?.length
     ? `<path class="chart-projection" d="${path([last, ...spec.projection])}"></path>` : "";
   const mid = x0 + span / 2;
@@ -2142,10 +2154,20 @@ function drawDriveTemps() {
   }
   const t = thresholds();
   const alert = smart?.protocol === "NVMe" ? t.drive_nvme_temp ?? 70 : t.drive_temp ?? 55;
+  // A cold drive has one reading a day; the others one every few minutes.
+  const every = smart?.cold ? (Number(state.snapshot.smart?.cold?.hours) || 24) * 60 : history.step_minutes || 5;
   drawChart(host, { points, ...tempRange(points.length ? points : [[0, alert - 20]], alert),
+    ...driveRange(state.driveTempHours), gap: every * 3 * 60000,
     format: celsiusFormat, label: `Temperature of ${entry.label}`,
     refs: [{ value: alert, label: "alert", kind: "warning" }],
     empty: "The chart fills in as the doctor reads SMART - a few minutes per point." });
+}
+
+// The drive charts' time axis: the chosen range up to now, wherever the
+// samples start.
+function driveRange(hours) {
+  const to = Date.now();
+  return { from: to - hours * 3600000, to };
 }
 
 // A hard disk, asleep or not: SSDs and NVMe drives never spin down.
@@ -2273,6 +2295,7 @@ function drawDriveIo() {
     summary.textContent = "";
   }
   drawChart(host, { points, yMin: 0, yMax: niceBytes(Math.max(1024, ...points.map((p) => p[1])) * 1.1),
+    ...driveRange(history.hours), gap: (history.step_minutes || 5) * 3 * 60000,
     format: (v) => `${bytes(v)}/s`, label: `Reads and writes of ${currentDrive().entry?.label || "the drive"}`,
     empty: "The chart fills in as the doctor reads the host - a few minutes per point." });
 }

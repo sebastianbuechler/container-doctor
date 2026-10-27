@@ -109,7 +109,10 @@ counters that move first on a failing drive.
 Each drive's temperature is kept too, at the Host charts' resolution, and
 charted in the drive's details. It costs the drives nothing: the sidecar
 reads SMART every five minutes anyway and skips a drive that is asleep, so
-history never keeps a disk from spinning down.
+history never keeps a disk from spinning down. The chart always spans the
+whole range you pick, 24 hours or 7 days, up to now: where there are no
+readings - the drive asleep, the sidecar or the doctor down - it leaves a gap
+rather than drawing a line across it.
 
 | Drive | Warning | Critical |
 |---|---|---|
