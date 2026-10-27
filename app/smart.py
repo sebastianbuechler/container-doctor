@@ -30,11 +30,15 @@ a Samsung, Percent_Lifetime_Remain on a Crucial): 100 new, counting down.
 NVMe reports both the same way on every drive.
 
 Drives asleep are not woken: the exporter asks smartctl to skip a drive in
-standby, and it shows as asleep until it next spins up.
+standby, and it shows as asleep until it next spins up. Some drives wake for
+the question itself - an expansion unit in deep sleep powers up to answer it.
+Those are cold drives, read by a second exporter only every few hours; their
+reading is served unchanged in between, so a new one is told by its values.
 """
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any
 
@@ -170,9 +174,7 @@ def drives(samples: list[tuple[str, dict[str, str], float]]) -> list[dict[str, A
         # in standby answers when smartctl is told not to wake it.
         d["asleep"] = d["passed"] is None and bool((d["exit_status"] or 0) & 2)
         _lifetime(d)
-    # The bays in order, as DSM numbers them, then everything else.
-    return sorted(by_device.values(),
-                  key=lambda d: (not _BAY.match(d["device"]), _natural(d["device"])))
+    return ordered(list(by_device.values()))
 
 
 # The counters worth a history, by key, and how each is said.
@@ -199,8 +201,22 @@ def counters(d: dict[str, Any]) -> dict[str, int]:
 
 
 def can_sleep(d: dict[str, Any]) -> bool:
-    """A spinning disk: SSDs (rotation 0) and NVMe have nothing to spin down."""
-    return d["asleep"] or (d.get("rotation_rpm") or 0) > 0
+    """A spinning disk: SSDs (rotation 0) and NVMe have nothing to spin down.
+    A cold drive is never asked, so its sleep is not known either way."""
+    return not d.get("cold") and (d["asleep"] or (d.get("rotation_rpm") or 0) > 0)
+
+
+def fingerprint(d: dict[str, Any]) -> str:
+    """What a reading said, to tell a new one from the same one served again:
+    the exporter keeps a cold drive's reading for a day and dates none."""
+    keys = ("passed", "temperature", "power_on_hours", "power_cycles", "counters",
+            "crc_errors", "nvme", "bytes_written", "bytes_read", "spin_ups", "load_cycles")
+    return json.dumps({k: d.get(k) for k in keys}, sort_keys=True, default=str)
+
+
+def ordered(drives: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The bays in order, as DSM numbers them, then everything else."""
+    return sorted(drives, key=lambda d: (not _BAY.match(d["device"]), _natural(d["device"])))
 
 
 def _lifetime(d: dict[str, Any]) -> None:

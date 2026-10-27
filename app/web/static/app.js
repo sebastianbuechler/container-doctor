@@ -452,7 +452,10 @@ const INFO = {
     </ul>
     <p>Read every five minutes. A drive asleep is not woken; it shows as asleep, and a hard
     disk's own page shows how much it slept and how often it woke. A drive's incident closes
-    once nothing is wrong with it any more.</p>`,
+    once nothing is wrong with it any more.</p>
+    <p><strong>Cold drives</strong> (<code>DOCTOR_SMART_COLD_DEVICES</code>) are read only once a
+    day, or every <code>DOCTOR_SMART_COLD_HOURS</code>: drives that even the question "are you
+    asleep?" wakes, like an expansion unit in deep sleep.</p>`,
   ports: `<p>Ports bound on the host itself.</p>
     <p><strong>Every interface</strong> means anything that can reach the host can reach the
     container directly - for a service behind Traefik that skips its TLS and sign-in.</p>
@@ -2034,6 +2037,7 @@ function renderDrive() {
     ["Powered on", smart?.power_on_hours !== null && smart?.power_on_hours !== undefined
       ? `${powerOn(smart.power_on_hours)} (${Number(smart.power_on_hours).toLocaleString()} h)` : null],
     ["Power cycles", count(smart?.power_cycles)],
+    ["SMART read", smart?.cold ? `${coldEvery()}, as a cold drive; latest values ${ago(smart.read_at)}` : null],
     ...(smart ? driveLifetime(smart) : []),
   ].filter(([, v]) => v !== null && v !== undefined);
   const bar = parts.length ? `<div class="drive-bar" role="img" aria-label="${esc(parts.map(({ m, used }) =>
@@ -2077,6 +2081,10 @@ function renderDrive() {
       <div class="segmented" role="radiogroup" aria-label="Temperature range">${[[24, "24 hours"], [168, "7 days"]].map(([h, words]) =>
         `<button type="button" role="radio" data-drive-hours="${h}" aria-checked="${state.driveTempHours === h}">${words}</button>`).join("")}
       </div></div><div class="chart" data-chart="drive-temp"></div></section>` : ""}
+    ${smart?.cold ? `<section class="detail-section"><h3>Sleep</h3>
+      <p class="muted">Not tracked: this is a cold drive, read only ${esc(coldEvery())}
+      (<code>DOCTOR_SMART_COLD_DEVICES</code>), because even asking whether it sleeps would
+      wake it.</p></section>` : ""}
     ${smart && canSleep(smart) ? `<section class="detail-section"><h3>Sleep</h3>
       <p class="muted" data-sleep-summary></p><div data-chart="drive-sleep"></div></section>` : ""}
     <section class="detail-section"><h3>Reads and writes</h3>
@@ -2127,8 +2135,10 @@ function drawDriveTemps() {
     return;
   }
   const points = history.samples.map(([at, c]) => [new Date(at).getTime(), Number(c)]);
-  if (smart?.temperature !== null && smart?.temperature !== undefined && !smart.asleep && state.snapshot.smart?.checked_at) {
-    points.push([new Date(state.snapshot.smart.checked_at).getTime(), Number(smart.temperature)]);
+  // The live reading at the end - for a cold drive, at the time it was read.
+  const liveAt = smart?.cold ? smart.read_at : state.snapshot.smart?.checked_at;
+  if (smart?.temperature !== null && smart?.temperature !== undefined && !smart.asleep && liveAt) {
+    points.push([new Date(liveAt).getTime(), Number(smart.temperature)]);
   }
   const t = thresholds();
   const alert = smart?.protocol === "NVMe" ? t.drive_nvme_temp ?? 70 : t.drive_temp ?? 55;
@@ -2140,7 +2150,14 @@ function drawDriveTemps() {
 
 // A hard disk, asleep or not: SSDs and NVMe drives never spin down.
 function canSleep(smart) {
-  return Boolean(smart.asleep || smart.rotation_rpm > 0);
+  return Boolean(!smart.cold && (smart.asleep || smart.rotation_rpm > 0));
+}
+
+// How often a cold drive is read, as words: "once a day", "every 6 hours".
+function coldEvery() {
+  const hours = Number(state.snapshot.smart?.cold?.hours) || 24;
+  if (hours === 24) return "once a day";
+  return hours % 24 === 0 ? `every ${hours / 24} days` : `every ${hours} hours`;
 }
 
 async function refreshDriveSleep() {
@@ -2400,7 +2417,8 @@ function renderSmart() {
     return;
   }
   const drives = s.drives || [];
-  sub.innerHTML = `${drives.length} drive${drives.length === 1 ? "" : "s"} · read ${agoTag(s.checked_at)}`;
+  sub.innerHTML = `${drives.length} drive${drives.length === 1 ? "" : "s"} · read ${agoTag(s.checked_at)}${
+    s.cold?.error ? ` · <span class="status" data-level="warning">cold drives' reader not answering</span>` : ""}`;
   if (!drives.length) {
     host.innerHTML = `<p class="empty">The sidecar answers but reports no drives. It needs the
       drives' device files - set <code>DOCTOR_SMART_DEVICES</code> if they are not found.</p>`;
@@ -2415,7 +2433,8 @@ function renderSmart() {
       <span>Temp</span><span>Powered on</span><span>Counters</span></div>
     <ul class="smart-list">${drives.map((d) => `<li class="smart-row">
       <div class="smart-name"><strong>${esc(d.label)}</strong> <span class="muted">${esc(d.model || d.device)}</span>
-        ${d.serial ? `<span class="muted smart-serial">· ${esc(d.serial)}</span>` : ""}</div>
+        ${d.serial ? `<span class="muted smart-serial">· ${esc(d.serial)}</span>` : ""}
+        ${d.cold ? `<span class="muted smart-serial" title="Read ${esc(coldEvery())}; latest values ${esc(ago(d.read_at))}">· cold, read ${esc(coldEvery())}</span>` : ""}</div>
       <div class="smart-pill">${drivePill(d)}</div>
       <div class="smart-facts">${fact("Temp", d.temperature !== null && d.temperature !== undefined ? `${Math.round(d.temperature)} °C` : "-")}
         ${fact("Powered on", powerOn(d.power_on_hours))}

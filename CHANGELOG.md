@@ -6,8 +6,21 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Cold drives: `DOCTOR_SMART_COLD_DEVICES` lists drives that a second reader
+  in the SMART sidecar reads only every `DOCTOR_SMART_COLD_HOURS` (default
+  once a day) instead of every five minutes - for drives that even the
+  question "are you asleep?" wakes, like a Synology expansion unit in deep
+  sleep. They keep all their SMART data, read less often; their sleep is not
+  tracked, and a reading served again is not recorded again. Set both in the
+  stack environment: the sidecar and the doctor read them.
+
 ### Fixed
 
+- The storage guide said asking a drive whether it sleeps never wakes it. An
+  expansion unit in deep sleep wakes for it; the guide says so now, and how to
+  tell.
 - Storage on a phone: the disk arrays no longer run off the right edge of the
   panel when a volume's free space is not watched; the setup snippet scrolls
   in its own box. The "Select a drive" hint is hidden on narrow screens, as

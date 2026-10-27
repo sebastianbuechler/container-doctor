@@ -111,32 +111,60 @@ services:
     environment:
       # "auto" finds the drives; or list them, space or comma separated.
       - SMART_DEVICES=${DOCTOR_SMART_DEVICES:-auto}
+      # Cold drives, read by a second reader on port 9634 every
+      # SMART_COLD_HOURS instead of every five minutes: drives that even the
+      # question "are you asleep?" wakes, like an expansion unit in deep sleep.
+      - SMART_COLD_DEVICES=${DOCTOR_SMART_COLD_DEVICES:-}
+      - SMART_COLD_HOURS=${DOCTOR_SMART_COLD_HOURS:-24}
     entrypoint:
       - /bin/sh
       - -c
       - |
-        set --
+        cold="$$(echo "$${SMART_COLD_DEVICES:-}" | tr ',' ' ')"
+        # Their device files without any ";type", to tell a cold drive by.
+        names=" "
+        for d in $$cold; do names="$$names$${d%%;*} "; done
+        is_cold() { case "$$names" in *" $${1%%;*} "*) return 0;; esac; return 1; }
+        devices=""
         if [ "$${SMART_DEVICES:-auto}" = auto ]; then
           for d in /dev/sata[0-9] /dev/sata[0-9][0-9]; do
-            [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d;sat"
+            [ -b "$$d" ] && ! is_cold "$$d" && devices="$$devices --smartctl.device=$$d;sat"
           done
           for d in /dev/nvme[0-9]n1; do
-            [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d"
+            [ -b "$$d" ] && ! is_cold "$$d" && devices="$$devices --smartctl.device=$$d"
           done
-          if [ $$# -eq 0 ]; then
+          if [ -z "$$devices" ]; then
             for d in /dev/sd[a-z] /dev/sd[a-z][a-z]; do
-              [ -b "$$d" ] && set -- "$$@" "--smartctl.device=$$d"
+              [ -b "$$d" ] && ! is_cold "$$d" && devices="$$devices --smartctl.device=$$d"
             done
           fi
         else
           for d in $$(echo "$$SMART_DEVICES" | tr ',' ' '); do
-            set -- "$$@" "--smartctl.device=$$d"
+            is_cold "$$d" || devices="$$devices --smartctl.device=$$d"
           done
         fi
-        [ $$# -eq 0 ] && set -- --smartctl.scan
+        colds=""
+        for d in $$cold; do
+          case "$$d" in *";"*) ;; /dev/sata*) d="$$d;sat" ;; esac
+          colds="$$colds --smartctl.device=$$d"
+        done
+        # Asked anyway when the time comes, so no standby check: it would wake
+        # them just the same and return nothing. Restarted if it ever exits.
+        if [ -n "$$colds" ]; then
+          while :; do
+            /bin/smartctl_exporter $$colds --web.listen-address=:9634 \
+              --smartctl.interval="$${SMART_COLD_HOURS:-24}h" --smartctl.powermode-check=never
+            sleep 60
+          done &
+        fi
+        # No drive of its own: smartctl's scan, unless all of them are cold -
+        # then a filter that matches nothing, or the scan would read them.
+        if [ -z "$$devices" ]; then
+          [ -n "$$colds" ] && devices="--smartctl.device-include=^\$$" || devices="--smartctl.scan"
+        fi
         # Every five minutes is plenty for SMART; a drive asleep is skipped,
-        # not woken.
-        exec /bin/smartctl_exporter "$$@" --smartctl.interval=5m --smartctl.powermode-check=standby
+        # not woken. Cold drives are left to the reader above.
+        exec /bin/smartctl_exporter $$devices --smartctl.interval=5m --smartctl.powermode-check=standby
     restart: unless-stopped
     mem_limit: 64m
     networks:
@@ -235,6 +263,9 @@ services:
       - DOCTOR_SMART_TEMP_C=${DOCTOR_SMART_TEMP_C:-}
       - DOCTOR_SMART_NVME_TEMP_C=${DOCTOR_SMART_NVME_TEMP_C:-}
       - DOCTOR_SMART_WEAR_PCT=${DOCTOR_SMART_WEAR_PCT:-}
+      - DOCTOR_SMART_COLD_DEVICES=${DOCTOR_SMART_COLD_DEVICES:-}
+      - DOCTOR_SMART_COLD_HOURS=${DOCTOR_SMART_COLD_HOURS:-}
+      - DOCTOR_SMART_COLD_URL=${DOCTOR_SMART_COLD_URL:-}
       # The host itself: CPU, memory, swap, load, disk activity, temperatures.
       # /proc is system-wide, so no extra mount or permission is needed.
       - DOCTOR_PROC_PATH=${DOCTOR_PROC_PATH:-}

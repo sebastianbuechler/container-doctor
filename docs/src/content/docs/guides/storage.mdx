@@ -181,7 +181,9 @@ without digging through the NAS's own logs.
 <Screenshot name="drive" alt="A hard disk's page: its temperature over the last day, and a bar of when it slept, with how often it woke." />
 
 It costs the drives nothing. The sidecar asks a drive whether it is in standby
-before it reads anything, and asking does not spin it up. Each reading is kept
+before it reads anything, and asking does not spin it up - except where the
+question itself wakes the drive, as in an expansion unit in deep sleep; for
+those, see [Cold drives](#cold-drives). Each reading is kept
 per five minutes (`DOCTOR_HOST_SAMPLE_MINUTES`), which catches every wake: a
 drive that wakes stays up for at least the NAS's idle timeout, 10 minutes or
 more on Synology. A wake is counted only when the drive was seen asleep and
@@ -194,6 +196,36 @@ doctor remembers each drive from its last reading awake - across restarts too -
 so a sleeping drive keeps its name and model on the Storage page and its history
 stays filed under its serial. SSDs and NVMe drives never spin down and have no
 sleep section.
+
+### Cold drives
+
+Some drives wake for the question itself. A Synology expansion unit with
+*Deep Sleep* on (Control Panel → Hardware & Power → Drive Hibernation) powers
+down as a whole, and answering "are you asleep?" powers it back up - so a
+reading every five minutes keeps waking it, and Log Center fills with *Disks
+in Expansion Unit woke up from hibernation* every 20-odd minutes. Stopping the
+sidecar for an hour tells whether it is the cause.
+
+List such drives as cold, and a second reader in the sidecar reads them only
+once a day; the everyday reader leaves them alone:
+
+```
+DOCTOR_SMART_COLD_DEVICES=/dev/sata5,/dev/sata6
+DOCTOR_SMART_COLD_HOURS=24
+```
+
+`DOCTOR_SMART_COLD_HOURS` sets how often - 6 for four readings a day, 168 for
+one a week. Both the sidecar and the doctor read these two, so set them in the
+stack environment, not in one service. The second reader listens on port 9634
+on the doctor's internal network only (`DOCTOR_SMART_COLD_URL`).
+
+A cold drive keeps everything SMART says about it - health, counters, wear,
+temperature - just less often: its row on the Storage page says *cold, read
+once a day*, and its page says when its latest values came. It is not asked
+whether it sleeps, so it has no sleep bar. Its reading stays the same for the
+whole interval, so the doctor records it only when the values change: a
+day-old temperature is not charted as the current one, every minute, all day.
+A problem it reports still opens an incident as soon as it is read.
 
 ### Reads and writes
 
