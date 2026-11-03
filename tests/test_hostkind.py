@@ -8,6 +8,7 @@ other host must have its md0 judged like every other array.
 from __future__ import annotations
 
 import os
+import sqlite3
 import tempfile
 import unittest
 
@@ -95,6 +96,25 @@ class RenamingTheHost(unittest.TestCase):
                          fingerprint("host:system", "", "host_memory", "host_memory"))
         self.assertEqual(len(store.list_changes(container_name="host:system")), 1)
         self.assertEqual(store.list_changes(container_name="host:nas"), [])
+
+    def test_a_table_with_an_odd_name_is_renamed_too_and_breaks_nothing(self):
+        path = os.path.join(tempfile.mkdtemp(), "doctor.db")
+        Store(path).close()
+        odd = 'odd"; DROP TABLE incidents; --'
+        conn = sqlite3.connect(path)
+        conn.execute(f'CREATE TABLE "{odd.replace(chr(34), chr(34) * 2)}" (container_name TEXT)')
+        conn.execute(f'INSERT INTO "{odd.replace(chr(34), chr(34) * 2)}" VALUES (?)', ("host:nas",))
+        conn.commit()
+        conn.close()
+
+        Store(path).close()
+        conn = sqlite3.connect(path)
+        self.addCleanup(conn.close)
+        tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertIn("incidents", tables)
+        self.assertEqual(conn.execute(
+            f'SELECT container_name FROM "{odd.replace(chr(34), chr(34) * 2)}"').fetchall(),
+            [("host:system",)])
 
 
 if __name__ == "__main__":
