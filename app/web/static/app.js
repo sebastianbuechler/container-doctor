@@ -1615,7 +1615,7 @@ function arrayRow(a, { pool = null } = {}) {
   const [label, levelName] = arrayState(a);
   const cached = cacheFor(a);
   const role = ARRAY_ROLES[a.name] && a.system ? ` · ${ARRAY_ROLES[a.name]}`
-    : cached ? ` · SSD cache${cached.length ? ` for ${cached.join(", ")}` : ""}` : "";
+    : cached ? ` · SSD cache${cached.length ? ` for ${esc(cached.join(", "))}` : ""}` : "";
   const disks = a.system ? `${a.active} disk${a.active === 1 ? "" : "s"}` : `${a.active} of ${a.slots} disks`;
   const size = a.size_bytes && !a.system ? ` · ${bytes(a.size_bytes)}` : "";
   const layer = pool && pool.arrays.length > 1 && !cached
@@ -4820,7 +4820,7 @@ function briefingSection(name, section, seen) {
   // so it shows a skeleton until the new summary lands.
   if (section.updating) {
     return `
-    <a class="brief-card brief-card-loading" href="${href}" data-level="${section.level}" aria-busy="true">
+    <a class="brief-card brief-card-loading" href="${href}" data-level="${esc(section.level)}" aria-busy="true">
       <span class="brief-card-head">${icon(glyph)}<span>${title}</span>${statusPill(word, levelName)}</span>
       <span class="skeleton-stack" aria-hidden="true">
         ${skeletonLines([88, 56], "skeleton-title")}
@@ -4838,7 +4838,7 @@ function briefingSection(name, section, seen) {
   const state = section.updating ? `<span class="brief-busy">${icon("i-refresh")} Updating</span>`
     : section.stale ? `<span class="brief-stale" title="Written before the latest change; rewritten shortly">Out of date</span>` : "";
   return `
-    <a class="brief-card${reveal}" href="${href}" data-level="${section.level}">
+    <a class="brief-card${reveal}" href="${href}" data-level="${esc(section.level)}">
       <span class="brief-card-head">${icon(glyph)}<span>${title}</span>${statusPill(word, levelName)}</span>
       <strong class="brief-card-headline">${esc(headline)}</strong>
       ${points.length ? `<ul>${points.map((point) => `<li>${esc(point)}</li>`).join("")}</ul>` : ""}
