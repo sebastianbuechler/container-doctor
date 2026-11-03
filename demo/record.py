@@ -68,8 +68,8 @@ def ready() -> bool:
 def main() -> None:
     work = Path(tempfile.mkdtemp(prefix="doctor-record-"))
     server = subprocess.Popen(
-        [sys.executable, "-m", "demo.serve", "--port", str(PORT), "--data", str(work / "run")],
-        cwd=ROOT)
+        [sys.executable, "-m", "demo.serve", "--port", str(int(PORT)), "--data", str(work / "run")],
+        cwd=ROOT, shell=False)
     try:
         deadline = time.monotonic() + 180
         while not ready():
