@@ -86,9 +86,13 @@ function shotPath(dir, name, scheme) {
   if (!["light", "dark"].includes(scheme) || !/^[a-z0-9-]+$/.test(name)) {
     throw new Error(`unsafe screenshot name: ${name}-${scheme}`);
   }
-  const base = path.resolve(dir);
+  const base = fs.realpathSync(dir);
   const file = path.resolve(base, `${name}-${scheme}.png`);
   if (path.dirname(file) !== base) throw new Error(`screenshot outside ${base}: ${file}`);
+  // A symlink there would carry the write somewhere else.
+  if (fs.lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) {
+    throw new Error(`screenshot is a symlink: ${file}`);
+  }
   return file;
 }
 
