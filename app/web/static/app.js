@@ -3037,7 +3037,7 @@ function renderNetwork() {
   const networks = report.networks || [];
   const count = homes(report);
   $("network-sub").textContent = networks.length
-    ? `${esc(s.networks)} network${s.networks === 1 ? "" : "s"}, from the last poll${
+    ? `${s.networks} network${s.networks === 1 ? "" : "s"}, from the last poll${
       report.inventory ? "" : " - read from the containers alone, so unused ones are missing"}`
     : "";
   $("network-stats").innerHTML = networks.length || (report.host_mode || []).length ? [
@@ -3046,7 +3046,7 @@ function renderNetwork() {
     ["Published ports", s.published_ports],
     ["Host network", s.host_mode],
     ...(report.inventory ? [["Unused", s.unused]] : []),
-  ].map(([label, value]) => `<div class="net-stat"><span>${label}</span><strong>${value ?? 0}</strong></div>`).join("") : "";
+  ].map(([label, value]) => `<div class="net-stat"><span>${esc(label)}</span><strong>${esc(value ?? 0)}</strong></div>`).join("") : "";
 
   const findings = report.findings || [];
   $("network-findings").innerHTML = (findings.length
@@ -4146,7 +4146,7 @@ function spendTable(days) {
     <table><thead><tr><th>Day</th><th>Total</th>${SPEND_SERIES.map(([, w]) => `<th>${esc(w)}</th>`).join("")}<th>Calls</th><th>Tokens in / out</th></tr></thead><tbody>
     ${rows.map((d) => { const p = spendParts(d); return `<tr><td>${esc(d.day)}</td><td>${esc(usd(d.cost_usd, true))}</td>
       ${SPEND_SERIES.map(([k]) => `<td>${p[k] ? esc(usd(p[k], true)) : "-"}</td>`).join("")}
-      <td>${esc(d.calls)}</td><td>${d.input_tokens.toLocaleString()} / ${d.output_tokens.toLocaleString()}</td></tr>`; }).join("")}
+      <td>${esc(d.calls)}</td><td>${esc(d.input_tokens.toLocaleString())} / ${esc(d.output_tokens.toLocaleString())}</td></tr>`; }).join("")}
     </tbody></table></details>`;
 }
 
@@ -4414,7 +4414,7 @@ function renderClassifier() {
   const reviewed = Object.values(by).reduce((a, b) => a + b, 0);
   stats.innerHTML = `
     <div class="spend-stat"><span>Today</span><strong>${esc(c.today.calls)}</strong><small>of ${esc(c.daily_calls)} calls · ${esc(usd(c.today.cost_usd, true))} of ${esc(usd(c.daily_usd))}</small></div>
-    <div class="spend-stat"><span>Last 7 days</span><strong>${reviewed}</strong><small>signals reviewed</small></div>
+    <div class="spend-stat"><span>Last 7 days</span><strong>${esc(reviewed)}</strong><small>signals reviewed</small></div>
     <div class="spend-stat"><span>${c.mode === "on" ? "Hidden as noise" : "Would have hidden"}</span><strong>${esc(by.suppress || 0)}</strong>
       <small>${esc(by.escalate || 0)} raised · ${esc(by.downgrade || 0)} lowered${c.last_error ? ` · ${esc(c.last_error)}` : ""}</small></div>`;
   const rows = c.recent || [];
