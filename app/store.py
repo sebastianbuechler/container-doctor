@@ -9,7 +9,6 @@ from __future__ import annotations
 import contextlib
 import json
 import os
-import re
 import sqlite3
 import threading
 import time
@@ -381,15 +380,13 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 """
 
 
-_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-
-
 def _ident(name: str) -> str:
     """Quote a table or column name for SQL. Identifiers cannot be bound as
-    `?` parameters, so anything that is not a plain name is refused."""
-    if not isinstance(name, str) or not _IDENT.fullmatch(name):
+    `?` parameters, so the name is quoted with any `"` in it doubled, and
+    can then only ever be read as a name."""
+    if not isinstance(name, str) or "\0" in name:
         raise ValueError(f"not a valid SQL identifier: {name!r}")
-    return f'"{name}"'
+    return '"' + name.replace('"', '""') + '"'
 
 
 def utcnow() -> str:
@@ -561,7 +558,7 @@ class Store:
                                    (fingerprint(new, "", row["kind"], row["kind"]), row["id"]))
         tables = [r["name"] for r in self._conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")]
-        for table in filter(_IDENT.fullmatch, tables):
+        for table in tables:
             columns = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({_ident(table)})")}
             if "container_name" in columns:
                 self._conn.execute(
