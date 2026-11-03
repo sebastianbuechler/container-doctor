@@ -81,6 +81,17 @@ async function api(page, url) {
   }, url);
 }
 
+// A screenshot's file, kept inside the screenshots directory.
+function shotPath(dir, name, scheme) {
+  if (!["light", "dark"].includes(scheme) || !/^[a-z0-9-]+$/.test(name)) {
+    throw new Error(`unsafe screenshot name: ${name}-${scheme}`);
+  }
+  const base = path.resolve(dir);
+  const file = path.resolve(base, `${name}-${scheme}.png`);
+  if (path.dirname(file) !== base) throw new Error(`screenshot outside ${base}: ${file}`);
+  return file;
+}
+
 async function tour(browser, scheme) {
   const context = await browser.newContext({
     viewport: DESKTOP, deviceScaleFactor: 2, colorScheme: scheme,
@@ -121,13 +132,13 @@ async function tour(browser, scheme) {
     }
     // The incident is scrolled to the top, under the sticky header.
     if (name === "incident") await page.evaluate(() => window.scrollBy(0, -96));
-    await page.screenshot({ path: path.join(dir, `${name}-${scheme}.png`) });
+    await page.screenshot({ path: shotPath(dir, name, scheme) });
     if (name.startsWith("drive")) await page.keyboard.press("Escape");
   }
 
   await page.setViewportSize(PHONE);
   await go(page, "#/overview");
-  await page.screenshot({ path: path.join(dir, `phone-${scheme}.png`) });
+  await page.screenshot({ path: shotPath(dir, "phone", scheme) });
   await context.close();
 }
 
