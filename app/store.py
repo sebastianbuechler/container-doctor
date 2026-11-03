@@ -9,6 +9,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -380,6 +381,17 @@ CREATE TABLE IF NOT EXISTS llm_usage (
 """
 
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def _ident(name: str) -> str:
+    """Quote a table or column name for SQL. Identifiers cannot be bound as
+    `?` parameters, so anything that is not a plain name is refused."""
+    if not isinstance(name, str) or not _IDENT.fullmatch(name):
+        raise ValueError(f"not a valid SQL identifier: {name!r}")
+    return f'"{name}"'
+
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -447,7 +459,7 @@ class Store:
         for column in ("stack", "service", "config_json"):
             if column not in have:
                 self._conn.execute(
-                    f"ALTER TABLE container_state ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
+                    f"ALTER TABLE container_state ADD COLUMN {_ident(column)} TEXT NOT NULL DEFAULT ''")
         have = {row["name"] for row in self._conn.execute("PRAGMA table_info(host_samples)")}
         if "temp_c" not in have:
             self._conn.execute("ALTER TABLE host_samples ADD COLUMN temp_c REAL")
@@ -470,7 +482,7 @@ class Store:
             ("claims_json", "TEXT NOT NULL DEFAULT '{}'"),
         ):
             if column not in have:
-                self._conn.execute(f"ALTER TABLE oidc_sessions ADD COLUMN {column} {ddl}")
+                self._conn.execute(f"ALTER TABLE oidc_sessions ADD COLUMN {_ident(column)} {ddl}")
         self._conn.execute(
             "UPDATE incidents SET last_seen_at = opened_at WHERE last_seen_at IS NULL"
         )
@@ -482,7 +494,7 @@ class Store:
         self._rename_host()
         if self._conn.execute("PRAGMA user_version").fetchone()[0] < SCRUBBED_VERSION:
             self._scrub()
-            self._conn.execute(f"PRAGMA user_version = {SCRUBBED_VERSION}")
+            self._conn.execute(f"PRAGMA user_version = {int(SCRUBBED_VERSION)}")
 
     def _scrub(self) -> None:
         """Run what is already stored through today's redaction, once.
@@ -500,19 +512,20 @@ class Store:
             return json.dumps(redact_obj(value), default=str, sort_keys=isinstance(value, dict))
 
         def rewrite(table: str, key: str, columns: tuple[str, ...], as_json: tuple[str, ...]):
-            have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+            have = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({_ident(table)})")}
             columns = tuple(c for c in columns if c in have)
             if not columns:
                 return
             rows = self._conn.execute(
-                f"SELECT {key}, {', '.join(columns)} FROM {table}").fetchall()
+                f"SELECT {_ident(key)}, {', '.join(map(_ident, columns))} "
+                f"FROM {_ident(table)}").fetchall()
             for row in rows:
                 values = [(scrub_json(row[c]) if c in as_json else redact(row[c] or ""))
                           if row[c] is not None else None for c in columns]
                 if values != [row[c] for c in columns]:
                     self._conn.execute(
-                        f"UPDATE {table} SET {', '.join(f'{c} = ?' for c in columns)} "
-                        f"WHERE {key} = ?", (*values, row[key]))
+                        f"UPDATE {_ident(table)} SET {', '.join(f'{_ident(c)} = ?' for c in columns)} "
+                        f"WHERE {_ident(key)} = ?", (*values, row[key]))
 
         for row in self._conn.execute(
                 "SELECT name, config_json FROM container_state WHERE config_json != ''").fetchall():
@@ -548,11 +561,11 @@ class Store:
                                    (fingerprint(new, "", row["kind"], row["kind"]), row["id"]))
         tables = [r["name"] for r in self._conn.execute(
             "SELECT name FROM sqlite_master WHERE type = 'table'")]
-        for table in tables:
-            columns = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({table})")}
+        for table in filter(_IDENT.fullmatch, tables):
+            columns = {r["name"] for r in self._conn.execute(f"PRAGMA table_info({_ident(table)})")}
             if "container_name" in columns:
                 self._conn.execute(
-                    f"UPDATE {table} SET container_name = ? WHERE container_name = ?", (new, old))
+                    f"UPDATE {_ident(table)} SET container_name = ? WHERE container_name = ?", (new, old))
 
     def close(self) -> None:
         with self._lock:
