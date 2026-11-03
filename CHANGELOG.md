@@ -6,6 +6,13 @@ uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security
+
+- The dashboard escapes two more values it reads from the server before
+  putting them on the page: the volumes an SSD cache serves, shown on its
+  array, and the level of each section of the brief. A volume name containing
+  HTML could otherwise have run script in the dashboard.
+
 ## [0.8.1] - 2026-10-27
 
 ### Fixed
