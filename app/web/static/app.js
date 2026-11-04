@@ -167,7 +167,7 @@ function level(pct, warn = 75, crit = 90) {
 }
 
 function statusPill(label, levelName) {
-  return `<span class="status" data-level="${levelName}">${esc(label)}</span>`;
+  return `<span class="status" data-level="${esc(levelName)}">${esc(label)}</span>`;
 }
 
 // One bar under every list: how much is showing, a way to see more, and a
@@ -1406,7 +1406,7 @@ function drawChart(host, spec) {
     <line class="chart-grid" x1="${left}" x2="${width - right}" y1="${sy(v)}" y2="${sy(v)}"></line>
     <text class="chart-axis" x="${left - 6}" y="${sy(v) + 4}" text-anchor="end">${esc(spec.format(v))}</text>`).join("");
   const refs = (spec.refs || []).filter((r) => r.value > yMin && r.value <= yMax).map((r) => `
-    <line class="chart-ref" data-kind="${r.kind || "neutral"}" x1="${left}" x2="${width - right}"
+    <line class="chart-ref" data-kind="${esc(r.kind || "neutral")}" x1="${left}" x2="${width - right}"
       y1="${sy(r.value)}" y2="${sy(r.value)}"></line>
     <text class="chart-ref-label" x="${width - right}" y="${r.kind === "warning" ? sy(r.value) + 13 : sy(r.value) - 4}"
       text-anchor="end">${esc(r.label)}</text>`).join("");
@@ -1616,7 +1616,7 @@ function arrayRow(a, { pool = null } = {}) {
   const cached = cacheFor(a);
   const role = ARRAY_ROLES[a.name] && a.system ? ` · ${ARRAY_ROLES[a.name]}`
     : cached ? ` · SSD cache${cached.length ? ` for ${esc(cached.join(", "))}` : ""}` : "";
-  const disks = a.system ? `${a.active} disk${a.active === 1 ? "" : "s"}` : `${a.active} of ${a.slots} disks`;
+  const disks = a.system ? `${esc(a.active)} disk${a.active === 1 ? "" : "s"}` : `${esc(a.active)} of ${esc(a.slots)} disks`;
   const size = a.size_bytes && !a.system ? ` · ${bytes(a.size_bytes)}` : "";
   const layer = pool && pool.arrays.length > 1 && !cached
     ? ` · layer ${pool.arrays.indexOf(a.name) + 1} of ${pool.arrays.length}` : "";
@@ -1624,8 +1624,8 @@ function arrayRow(a, { pool = null } = {}) {
   const busy = BUSY_OPERATIONS.has(a.operation) ? " is-busy" : "";
   const tint = pool ? ` data-layer="${layerAttr(a)}"` : "";
   const progress = a.progress !== null && a.progress !== undefined ? `
-    <div class="meter" role="img" aria-label="${esc(a.operation)} ${a.progress}% done">
-      <div class="meter-fill${busy}"${tint} style="width:${Math.min(100, a.progress)}%"></div></div>
+    <div class="meter" role="img" aria-label="${esc(a.operation)} ${esc(a.progress)}% done">
+      <div class="meter-fill${busy}"${tint} style="width:${Math.min(100, Number(a.progress) || 0)}%"></div></div>
     <span class="muted">${esc(a.operation)} ${a.progress.toFixed(1)}%${
       a.finish_minutes ? ` · about ${duration(Math.ceil(a.finish_minutes) * 60)} left` : ""}</span>` : "";
   const details = [];
@@ -2505,7 +2505,7 @@ function figure(value, digits = 0, unit = "%") {
 
 function hostTile(label, value, note, fill, levelName) {
   const meter = fill === null || fill === undefined ? "" : `
-    <div class="meter"><div class="meter-fill" data-level="${levelName}"
+    <div class="meter"><div class="meter-fill" data-level="${esc(levelName)}"
       style="width:${Math.min(100, Math.max(0, fill))}%"></div></div>`;
   return `<div class="host-tile">
     <span class="host-tile-label">${esc(label)}</span>
@@ -2783,8 +2783,8 @@ function renderConnectivity() {
     return;
   }
   $("connectivity-sub").innerHTML = c.last_round_at
-    ? `Every ${c.interval_seconds}s from the doctor's container · last ${agoTag(c.last_round_at)}`
-    : `First check within ${c.interval_seconds}s`;
+    ? `Every ${esc(c.interval_seconds)}s from the doctor's container · last ${agoTag(c.last_round_at)}`
+    : `First check within ${esc(c.interval_seconds)}s`;
   const word = (value, yes, no) => (value === null || value === undefined
     ? statusPill(`${yes.split(" ")[0]}: not checked`, "neutral")
     : value ? statusPill(yes, "good") : statusPill(no, "critical"));
@@ -2800,7 +2800,7 @@ function renderConnectivity() {
         <span class="conn-ms">${r.ms !== null && r.ms !== undefined ? `${Math.round(r.ms)} ms` : ""}</span></div>
       <div class="conn-detail muted" title="${esc(r.detail || "")}">${esc(r.detail || "")}</div>
       <div class="conn-history">${strip(r.history || [])}
-        <span class="conn-uptime">${r.uptime_pct !== null && r.uptime_pct !== undefined ? `${r.uptime_pct}%` : ""}</span></div>
+        <span class="conn-uptime">${r.uptime_pct !== null && r.uptime_pct !== undefined ? `${esc(r.uptime_pct)}%` : ""}</span></div>
     </li>`).join("");
   host.innerHTML = summary + `<ul class="conn-list">${rows}</ul>`;
 }
@@ -2982,7 +2982,7 @@ function drawBridges() {
       ${edges.join("")}
       ${nets.map((n) => node("net", n.name, left, netY.get(n.name), n.name)).join("")}
       ${bridges.map((b) => node("member", b, right, boxY.get(b), b,
-        `<circle class="net-node-dot" data-level="${levels.get(b) || "neutral"}" cx="${right + 11}" cy="${boxY.get(b) + BOX / 2}" r="4"/>`)).join("")}
+        `<circle class="net-node-dot" data-level="${esc(levels.get(b) || "neutral")}" cx="${right + 11}" cy="${boxY.get(b) + BOX / 2}" r="4"/>`)).join("")}
     </svg>`;
 }
 
@@ -3046,7 +3046,7 @@ function renderNetwork() {
     ["Published ports", s.published_ports],
     ["Host network", s.host_mode],
     ...(report.inventory ? [["Unused", s.unused]] : []),
-  ].map(([label, value]) => `<div class="net-stat"><span>${label}</span><strong>${value ?? 0}</strong></div>`).join("") : "";
+  ].map(([label, value]) => `<div class="net-stat"><span>${esc(label)}</span><strong>${esc(value ?? 0)}</strong></div>`).join("") : "";
 
   const findings = report.findings || [];
   $("network-findings").innerHTML = (findings.length
@@ -3178,8 +3178,8 @@ function newerLine(raw, entry = null) {
   if (!raw) return "";
   const newer = { ...raw, notes_url: safeUrl(raw.notes_url), breaking_url: safeUrl(raw.breaking_url) };
   const levelName = newer.level === "major" ? "warning" : "neutral";
-  const pill = `<span class="status" data-level="${levelName}">${esc(newer.tag)} · ${esc(LEVEL_WORDS[newer.level] || newer.level)}</span>`;
-  const behind = newer.behind > 1 ? ` <span class="muted">${newer.behind} releases behind</span>` : "";
+  const pill = `<span class="status" data-level="${esc(levelName)}">${esc(newer.tag)} · ${esc(LEVEL_WORDS[newer.level] || newer.level)}</span>`;
+  const behind = newer.behind > 1 ? ` <span class="muted">${esc(newer.behind)} releases behind</span>` : "";
   const notes = entry?.source ? notesToggle(entry, newer.tag)
     : newer.notes_url
       ? ` <a class="notes-link" href="${esc(newer.notes_url)}" target="_blank" rel="noopener noreferrer">release notes</a>` : "";
@@ -4133,7 +4133,7 @@ function spendHover(event) {
   tip.hidden = false;
   tip.innerHTML = `<strong>${esc(usd(day.cost_usd, true))}</strong>
     <span>${esc(new Date(`${day.day}T12:00:00Z`).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }))}
-      · ${day.calls} call${day.calls === 1 ? "" : "s"}</span>${rows}`;
+      · ${esc(day.calls)} call${day.calls === 1 ? "" : "s"}</span>${rows}`;
   const box = host.getBoundingClientRect();
   const x = Number(hit.getAttribute("x")) + Number(hit.getAttribute("width")) / 2;
   tip.style.left = `${Math.max(0, Math.min(x - tip.offsetWidth / 2, box.width - tip.offsetWidth))}px`;
@@ -4146,7 +4146,7 @@ function spendTable(days) {
     <table><thead><tr><th>Day</th><th>Total</th>${SPEND_SERIES.map(([, w]) => `<th>${esc(w)}</th>`).join("")}<th>Calls</th><th>Tokens in / out</th></tr></thead><tbody>
     ${rows.map((d) => { const p = spendParts(d); return `<tr><td>${esc(d.day)}</td><td>${esc(usd(d.cost_usd, true))}</td>
       ${SPEND_SERIES.map(([k]) => `<td>${p[k] ? esc(usd(p[k], true)) : "-"}</td>`).join("")}
-      <td>${d.calls}</td><td>${d.input_tokens.toLocaleString()} / ${d.output_tokens.toLocaleString()}</td></tr>`; }).join("")}
+      <td>${esc(d.calls)}</td><td>${esc(d.input_tokens.toLocaleString())} / ${esc(d.output_tokens.toLocaleString())}</td></tr>`; }).join("")}
     </tbody></table></details>`;
 }
 
@@ -4163,7 +4163,7 @@ function renderSpend() {
   $("spend-stats").innerHTML = `
     <div class="spend-stat"><span>In range</span><strong>${esc(usd(total, true))}</strong><small>${calls} calls</small></div>
     <div class="spend-stat"><span>Per active day</span><strong>${esc(usd(active ? total / active : 0, true))}</strong><small>${active} of ${days.length} days</small></div>
-    <div class="spend-stat"><span>Today</span><strong>${esc(usd(today.cost_usd, true))}</strong><small>${budget ? `of ${esc(usd(budget))} budget` : "no budget set"}${spend.call_limit ? ` · ${today.calls} of ${spend.call_limit} calls` : ""}</small></div>`;
+    <div class="spend-stat"><span>Today</span><strong>${esc(usd(today.cost_usd, true))}</strong><small>${budget ? `of ${esc(usd(budget))} budget` : "no budget set"}${spend.call_limit ? ` · ${esc(today.calls)} of ${esc(spend.call_limit)} calls` : ""}</small></div>`;
   $("spend-legend").innerHTML = SPEND_SERIES.map(([k, words]) =>
     `<li><i class="swatch" data-series="${k}"></i>${esc(words)}</li>`).join("");
   drawSpendChart($("spend-chart"), days);
@@ -4413,10 +4413,10 @@ function renderClassifier() {
   const by = week.by_action || {};
   const reviewed = Object.values(by).reduce((a, b) => a + b, 0);
   stats.innerHTML = `
-    <div class="spend-stat"><span>Today</span><strong>${c.today.calls}</strong><small>of ${c.daily_calls} calls · ${esc(usd(c.today.cost_usd, true))} of ${esc(usd(c.daily_usd))}</small></div>
-    <div class="spend-stat"><span>Last 7 days</span><strong>${reviewed}</strong><small>signals reviewed</small></div>
-    <div class="spend-stat"><span>${c.mode === "on" ? "Hidden as noise" : "Would have hidden"}</span><strong>${by.suppress || 0}</strong>
-      <small>${by.escalate || 0} raised · ${by.downgrade || 0} lowered${c.last_error ? ` · ${esc(c.last_error)}` : ""}</small></div>`;
+    <div class="spend-stat"><span>Today</span><strong>${esc(c.today.calls)}</strong><small>of ${esc(c.daily_calls)} calls · ${esc(usd(c.today.cost_usd, true))} of ${esc(usd(c.daily_usd))}</small></div>
+    <div class="spend-stat"><span>Last 7 days</span><strong>${esc(reviewed)}</strong><small>signals reviewed</small></div>
+    <div class="spend-stat"><span>${c.mode === "on" ? "Hidden as noise" : "Would have hidden"}</span><strong>${esc(by.suppress || 0)}</strong>
+      <small>${esc(by.escalate || 0)} raised · ${esc(by.downgrade || 0)} lowered${c.last_error ? ` · ${esc(c.last_error)}` : ""}</small></div>`;
   const rows = c.recent || [];
   list.innerHTML = rows.length ? rows.map((row) => `
     <li class="audit-row">
@@ -4482,7 +4482,7 @@ function renderLiveTail(host, result) {
   host.innerHTML = `
     <div class="log-head">
       <strong>${esc(result.container)}</strong>
-      <span>last ${result.lines} lines, fetched just now \u00b7 secrets redacted</span>
+      <span>last ${esc(result.lines)} lines, fetched just now \u00b7 secrets redacted</span>
     </div>
     <div class="evidence">${esc(result.logs) || "(no output)"}</div>`;
 }
@@ -4523,7 +4523,7 @@ function renderContext(host, ctx) {
     ? ctx.neighbours.map((n) => `
         <li>
           <strong>${esc(n.container)}</strong>
-          <span class="muted">${n.matches} error line(s)</span>
+          <span class="muted">${esc(n.matches)} error line(s)</span>
           <div class="evidence" style="margin-top:6px">${n.sample.map(esc).join("\n")}</div>
         </li>`).join("")
     : `<li class="muted">Nothing else logged errors in this window.</li>`;
@@ -4537,7 +4537,7 @@ function renderContext(host, ctx) {
 
   host.innerHTML = `
     <div class="log-head">
-      <strong>\u00b1${ctx.window_minutes} min around detection</strong>
+      <strong>\u00b1${esc(ctx.window_minutes)} min around detection</strong>
       <span>${esc(ctx.since)} \u2192 ${esc(ctx.until)}</span>
     </div>
     <div class="evidence">${esc(ctx.logs) || "(no output in this window)"}</div>
