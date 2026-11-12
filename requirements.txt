@@ -15,5 +15,5 @@ itsdangerous==2.2.0
 # FastAPI; requests is under the docker SDK.
 cryptography==50.0.2
 httpx2==2.13.1
-starlette==1.8.0
+starlette==1.10.0
 requests==2.34.2
