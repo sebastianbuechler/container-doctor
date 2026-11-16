@@ -10,13 +10,13 @@ below; every change also checks the docs - see
 
 ## Setting up
 
-The image runs Python 3.14 (the version is read from the `Dockerfile`), and
+The image runs Python 3.15 (the version is read from the `Dockerfile`), and
 the tests should run on the same:
 
 ```bash
 git clone https://github.com/sebastianbuechler/container-doctor.git
 cd container-doctor
-python3.14 -m venv .venv && . .venv/bin/activate
+python3.15 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 ```
 
