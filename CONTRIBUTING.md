@@ -12,13 +12,13 @@ The full guide is on the docs site:
 [Development](https://sebastianbuechler.github.io/container-doctor/contributing/development/),
 [Adding a setting](https://sebastianbuechler.github.io/container-doctor/contributing/adding-a-setting/),
 [Documentation](https://sebastianbuechler.github.io/container-doctor/contributing/documentation/) and
-[Releasing](https://sebastianbuechler.github.io/container-doctor/contributing/releasing/). In short, on Python 3.14 (the
+[Releasing](https://sebastianbuechler.github.io/container-doctor/contributing/releasing/). In short, on Python 3.15 (the
 version the `Dockerfile` uses):
 
 ```bash
 git clone https://github.com/sebastianbuechler/container-doctor.git
 cd container-doctor
-python3.14 -m venv .venv && . .venv/bin/activate
+python3.15 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt -r requirements-dev.txt
 python -m unittest discover -s tests
 ```
