@@ -96,8 +96,9 @@ class StubProvider:
                     target = query["redirect_uri"][0] + "?" + urllib.parse.urlencode(
                         {"code": code, "state": query.get("state", [""])[0]}
                     )
+                    safe_target = target.replace("\r", "").replace("\n", "")
                     self.send_response(302)
-                    self.send_header("Location", target)
+                    self.send_header("Location", safe_target)
                     self.end_headers()
                     return
                 return self._json({"error": "not found"}, status=404)
